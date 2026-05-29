@@ -1,0 +1,172 @@
+# -*- coding: utf-8 -*-
+"""ReAct 그래프 — 명세 부록 G1. agent ⇄ tools 루프 + 완결성 가드 + build_reasoning + compose + finalize/abstain."""
+from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode
+from langchain_core.messages import HumanMessage
+from state import GaneomteoState
+from tools import TOOLS
+from agent import make_agent_node
+
+_LANDUSE = ("전", "답", "과수원", "임야")
+
+
+_STEP_HARDCAP = 24      # agent 방문 하드캡(무한루프 방지)
+_GUARD_BOUNCE_CAP = 19  # 이 이상이면 guard 바운스 중단(진행)
+
+
+def route_after_agent(state):
+    if state.get("terminal_reason") in ("site_geocode_failed", "aborted", "error"):  # H4 조기종료
+        return "abstain"
+    if state.get("_steps", 0) >= _STEP_HARDCAP:    # 하드캡 초과 → 도구루프 강제 종료
+        return "completeness_guard"
+    last = state["messages"][-1]
+    if getattr(last, "tool_calls", None):
+        return "tools"
+    return "completeness_guard"
+
+
+def completeness_guard(state):
+    """결정적 누락 점검(부록 G4-2). 빠지면 agent 복귀 — 단 _steps 캡 내에서만(루프 방지)."""
+    called = set(state.get("_toolcalls", []))
+    miss = []
+    if "get_parcel" not in called:
+        miss.append("입지")
+    if state.get("jimok") in _LANDUSE and "record_uijae" not in called:
+        miss.append("의제")
+    if state.get("_delegated") and "ordin_byeolpyo_fetch" not in called:
+        miss.append("조례별표")
+    if state.get("pnu"):   # med: 호출여부가 아니라 단계 커버리지 검사
+        doc_stages = {d.get("stage_key") for d in state.get("documents", [])}
+        need = {"건축허가", "착공신고", "사용승인"} | {u.get("stage_key") for u in state.get("uijae", [])}
+        if not need.issubset(doc_stages):
+            miss.append("서류전수:" + ",".join(sorted(need - doc_stages)))
+    if miss and state.get("_steps", 0) < _GUARD_BOUNCE_CAP:
+        return {"_incomplete": True, "messages": [HumanMessage(f"아직 미확인: {miss}. 해당 도구로만 마저 조회하고, 끝나면 도구 없이 '완료'라 답하라.")]}
+    if miss:   # 캡 도달 — 더 못 채움 → 기권 사유로 남기고 진행
+        return {"_incomplete": False, "abstentions": [{"node": "completeness_guard", "사유": f"미충족 {miss}(스텝 캡)"}]}
+    return {"_incomplete": False}
+
+
+def route_after_guard(state):
+    if state.get("_incomplete"):
+        return "agent"
+    substantive = [c for c in state.get("citations", []) if c.get("source") in ("law", "ordin", "data")]
+    if not substantive and not state.get("act_verdict"):   # #7 판정 근거 전무(vworld 입지만)→기권
+        return "abstain"
+    return "build_reasoning"
+
+
+def _derive_verdict(state):
+    regs = (state.get("reg_overlaps") or []) + [state.get("zone") or ""]
+    if any(("개발제한" in r) or ("농업진흥" in r) for r in regs):   # H1: 강제금지 1차 게이트
+        return "위험·금지"
+    landuse = state.get("jimok") in _LANDUSE
+    jv = state.get("jorye_verdicts") or []
+    real = [v for v in jv if v.get("verdict") not in ("확인필요", "", None)]  # H2: 실패append 무시
+    pick = real[-1] if real else (jv[-1] if jv else None)
+    if pick is not None:
+        v = pick.get("verdict", "")
+        if v == "가능":
+            return "가능(조건부)" if landuse else "가능"
+        if v in ("불가", "위험·금지"):
+            return "위험·금지"
+        return "확인필요"
+    if "가능" in state.get("act_verdict", ""):
+        return "가능(조건부)" if landuse else "가능"
+    return "확인필요"  # 입지 미확보(API실패)도 여기 = 안전 degrade(거짓 가능 방지)
+
+
+def build_reasoning(state):
+    """결정적 논증 골격(부록 E). 각 단계 citation. 서술은 (실 LLM) compose가."""
+    steps, seq = [], 0
+    def add(kind, fact, basis, infer="", leads=""):
+        nonlocal seq; seq += 1
+        return {"seq": seq, "kind": kind, "fact": fact, "basis": basis,
+                "infer": infer, "leads": leads, "status": "확정" if basis else "확인필요"}
+    steps.append(add("입지", f"지목={state.get('jimok')} 용도지역={state.get('zone')} 도로접면={state.get('road_side')}", "vworld"))
+    if state.get("act_verdict"):
+        steps.append(add("행위제한", f"{state.get('zone')} {state['use_type']}", "data.go.kr 1613000", state.get("act_verdict")))
+    for jv in state.get("jorye_verdicts", []):
+        steps.append(add("조례호목해소", jv.get("ordin_name") or "조례 별표",
+                         "ordin" if jv.get("verdict") != "확인필요" else None, jv.get("reason", ""), jv.get("verdict", "")))
+    for u in state.get("uijae", []):
+        steps.append(add("의제", f"{u['trigger']} → {u['permit_name']}", "law"))
+    for r in state.get("reg_effects", []):
+        steps.append(add("규제효과", r["reg_name"], r.get("law_name"), r.get("effect", "")))
+    if state.get("scale_limits"):
+        steps.append(add("규모임계", "연면적/층수 임계", "law"))
+    verdict = _derive_verdict(state)
+    key_uncertain = any(s["status"] == "확인필요" and s["kind"] in ("행위제한", "조례호목해소") for s in steps)
+    if key_uncertain and verdict in ("가능", "가능(조건부)", "조건부"):   # H5: 핵심단계 근거없으면 강등
+        verdict = "확인필요"
+    return {"legal_reasoning": {"steps": steps, "verdict": verdict,
+            "verdict_basis_seq": [s["seq"] for s in steps if s["kind"] in ("행위제한", "조례호목해소")]},
+            "verdict": verdict}
+
+
+def compose(state):
+    """진단 카드 조립(부록 D1.2). 사실 재생성 없이 State 값만. (실 LLM이면 서술 강화)."""
+    card = {
+        "verdict": state.get("verdict"),
+        "legal_reasoning": state.get("legal_reasoning"),
+        "uijae": state.get("uijae"),
+        "documents": [{"stage": d["stage_key"], "count": d.get("count", 0), "status": d["status"]} for d in state.get("documents", [])],
+        "scale_limits": state.get("scale_limits"),
+        "author": state.get("author"),
+        "reg_effects": state.get("reg_effects"),
+        "citations": len(state.get("citations", [])),
+        "abstentions": state.get("abstentions", []),
+    }
+    return {"_card": card, "terminal_reason": "completed"}
+
+
+_STATUS = {"completed": "완료", "verdict_resolved": "조기종료", "need_human": "사람검토",
+           "site_geocode_failed": "재입력필요", "fallback_extract_failed": "부분완료",
+           "error": "부분완료", "aborted": "중단"}
+
+
+def finalize(state):
+    """부록 D2: 종료 반환계약 ReturnEnvelope(항상 채워 반환)."""
+    tr = state.get("terminal_reason", "completed")
+    env = {"terminal_reason": tr, "status": _STATUS.get(tr, "완료"),
+           "card": state.get("_card") or {"verdict": state.get("verdict"), "사유": state.get("abstentions")},
+           "abstentions": state.get("abstentions", [])}
+    return {"terminal_reason": tr, "_return": env}
+
+
+def abstain(state):
+    tr = state.get("terminal_reason") or "need_human"   # H4: 기존 terminal_reason 보존
+    return {"terminal_reason": tr,
+            "_card": {"verdict": "확인필요", "terminal": tr,
+                      "사유": state.get("abstentions") or "근거(citation) 0건",
+                      "입지": {"지목": state.get("jimok"), "용도지역": state.get("zone"),
+                              "도로접면": state.get("road_side")},
+                      "citations": len(state.get("citations", []))}}
+
+
+def build_graph():
+    raw_agent, mode = make_agent_node()
+    def agent_node(state):                       # _steps 증가(루프 하드캡용)
+        r = raw_agent(state)
+        r["_steps"] = 1                          # operator.add → 누적
+        return r
+    b = StateGraph(GaneomteoState)
+    b.add_node("agent", agent_node)
+    b.add_node("tools", ToolNode(TOOLS))            # Command(update) 자동 적용
+    b.add_node("completeness_guard", completeness_guard)
+    b.add_node("build_reasoning", build_reasoning)
+    b.add_node("compose", compose)
+    b.add_node("finalize", finalize)
+    b.add_node("abstain", abstain)
+    b.add_edge(START, "agent")
+    b.add_conditional_edges("agent", route_after_agent,
+                            {"tools": "tools", "completeness_guard": "completeness_guard", "abstain": "abstain"})
+    b.add_edge("tools", "agent")
+    b.add_conditional_edges("completeness_guard", route_after_guard,
+                            {"agent": "agent", "build_reasoning": "build_reasoning", "abstain": "abstain"})
+    b.add_edge("build_reasoning", "compose")
+    b.add_edge("compose", "finalize")
+    b.add_edge("abstain", "finalize")
+    b.add_edge("finalize", END)
+    from langgraph.checkpoint.memory import MemorySaver
+    return b.compile(checkpointer=MemorySaver()), mode   # H3: interrupt(HITL) 가능하게
