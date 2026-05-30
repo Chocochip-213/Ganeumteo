@@ -14,6 +14,7 @@ class Citation(BaseModel):
     title: Optional[str] = None
     quote: str = ""                   # 원문 인용 ≤200
     url: Optional[str] = None
+    extract_method: Optional[str] = None   # 조례 청크 출처: 인덱스청크|BodyText|PrvText(캡)|hwpx (가늠터 UI)
 
 
 class UijaeItem(BaseModel):
@@ -86,6 +87,7 @@ class GaneomteoState(TypedDict):
     act_verdict: NotRequired[str]
     act_reg_raw: NotRequired[list]
     _delegated: NotRequired[bool]
+    doc_index_hit: NotRequired[bool]   # 조례 RAG 인덱스 HIT 여부(가늠터 UI 트레이스 노출)
     verdict: NotRequired[str]
     # ── 산출 (누적=operator.add)
     uijae: Annotated[list, operator.add]
