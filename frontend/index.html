@@ -8,16 +8,6 @@
 <link rel="stylesheet" href="./colors_and_type.css" />
 <link rel="stylesheet" href="./nav_app.css" />
 <style>
-  /* 신규 요소: 규모 입력폼 / 근거 배지 변형 — 디자인 토큰 재사용(nav_app.css 미수정) */
-  .scale-form .sf-row { display: flex; gap: 10px; margin: 10px 0 14px; flex-wrap: wrap; }
-  .scale-form .sf-field { flex: 1; min-width: 130px; display: flex; flex-direction: column; gap: 6px; }
-  .scale-form .sf-k { font-size: 12.5px; font-weight: 600; color: var(--fg-3); }
-  .scale-form .sf-field input, .scale-form .sf-field select { width: 100%; box-sizing: border-box; border: 1.5px solid var(--border-1); border-radius: 11px; padding: 11px 13px; font-size: 15.5px; font-weight: 600; font-family: var(--font-sans); color: var(--fg-1); background: var(--bg-surface); transition: border-color var(--t-fast) var(--ease-out); }
-  .scale-form .sf-field input:focus, .scale-form .sf-field select:focus { outline: none; border-color: var(--sky-400); box-shadow: var(--ring-focus); }
-  .scale-form .sf-go { width: 100%; justify-content: center; }
-  .scale-form .sf-actions { display: flex; gap: 8px; }
-  .scale-form .sf-actions .sf-go { flex: 1; }
-  .scale-form .sf-actions .btn-soft { flex-shrink: 0; }
   .think-step.dim { opacity: 0.7; font-size: 13.5px; }
   .think-step.dim .tk { background: var(--sky-200); }
   .verdict-card .bsrc.bsrc-none { color: oklch(0.45 0.14 25); background: var(--danger-bg); }
@@ -103,10 +93,7 @@
   .ds-doc { display: flex; align-items: flex-start; gap: 9px; padding: 9px 0; border-top: 1px solid var(--border-1); }
   .ds-doc .dchk { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--border-2); background: var(--neutral-50); color: var(--sky-600); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
   .ds-doc .dtxt { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.5; color: var(--fg-1); }
-  .ds-doc .dho { font-weight: 700; color: var(--fg-2); margin-right: 5px; }
-  .ds-proviso { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: var(--warm-fg); background: var(--warm-bg); border-radius: 999px; padding: 2px 7px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
   .ds-mok { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0 4px 30px; font-size: 12.5px; line-height: 1.5; color: var(--fg-2); }
-  .ds-mok .mho { font-weight: 700; color: var(--fg-3); flex-shrink: 0; }
   .ds-mok .mbar { width: 2px; align-self: stretch; background: var(--neutral-200); border-radius: 2px; flex-shrink: 0; margin-right: 2px; }
   .ds-na-note { padding: 0 16px 14px; font-size: 13px; color: var(--fg-2); line-height: 1.55; display: flex; gap: 8px; }
   .ds-na-note svg { color: var(--warm); flex-shrink: 0; margin-top: 1px; }
