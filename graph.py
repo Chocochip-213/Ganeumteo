@@ -93,8 +93,22 @@ def build_reasoning(state):
         steps.append(add("의제", f"{u['trigger']} → {u['permit_name']}", "law"))
     for r in state.get("reg_effects", []):
         steps.append(add("규제효과", r["reg_name"], r.get("law_name"), r.get("effect", "")))
-    if state.get("scale_limits"):
+    sl = state.get("scale_limits")
+    if sl:
         steps.append(add("규모임계", "연면적/층수 임계", "law"))
+        if sl.get("max_building_area") is not None:   # 건폐율·용적률 envelope(가늠치 — verdict 무관)
+            steps.append(add("규모가늠", f"최대건축면적 {sl.get('max_building_area')}㎡·최대연면적 {sl.get('max_floor_area')}㎡·약식층수 {sl.get('approx_floors')}",
+                             "law", sl.get("envelope_note", "")))
+    pr = state.get("parking_req")
+    if pr and pr.get("status") == "산출":   # 부설주차 N대(가늠치 — verdict 무관)
+        steps.append(add("부설주차", f"{pr.get('use_type')} {pr.get('floor_area')}㎡ → {pr.get('spaces')}대",
+                         "law", pr.get("note", "")))
+    elif pr:
+        steps.append(add("부설주차", "부설주차 대수", None, pr.get("note", "")))
+    for lv in state.get("levies", []):   # 부담금(금액 없으면 status=확인필요 → basis None)
+        steps.append(add("부담금", f"{lv.get('levy_type')}: {lv.get('formula','')}".strip(),
+                         "law" if lv.get("status") == "산출" else None,
+                         (f"≈{lv.get('amount'):,}원" if lv.get("amount") is not None else lv.get("note", ""))))
     verdict = _derive_verdict(state)
     key_uncertain = any(s["status"] == "확인필요" and s["kind"] in ("행위제한", "조례호목해소") for s in steps)
     if key_uncertain and verdict in ("가능", "가능(조건부)", "조건부"):   # H5: 핵심단계 근거없으면 강등
@@ -113,7 +127,9 @@ def compose(state):
         "documents": [{"stage": d["stage_key"], "count": d.get("count", 0), "status": d["status"],
                        "law": d.get("law", ""), "article": d.get("article", ""), "items": d.get("items", [])}
                       for d in state.get("documents", [])],
-        "scale_limits": state.get("scale_limits"),
+        "scale_limits": state.get("scale_limits"),   # compute_scale·compute_envelope 공용(envelope 3필드 포함)
+        "parking_req": state.get("parking_req"),       # 부설주차 N대(parking_quota)
+        "levies": state.get("levies", []),             # 부담금(농지보전·대체산림·개발) — 금액 없으면 status=확인필요
         "author": state.get("author"),
         "reg_effects": state.get("reg_effects"),
         "citations": len(state.get("citations", [])),
