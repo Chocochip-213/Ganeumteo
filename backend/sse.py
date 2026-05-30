@@ -2,12 +2,10 @@
 """graph.stream(stream_mode='updates') → 정규화 TraceEvent SSE 스트림.
 - 동기 제너레이터: Starlette StreamingResponse가 threadpool에서 iterate → 이벤트루프 비차단(검수 HIGH).
 - astream_events 금지(GMS gpt-5.2서 tool_call_id=None ValidationError) — updates 경로만.
-- found = 확장 실패토큰셋(검수 fix#7: 못찾음·없음·빈값 포함). _safe_*로 원문 누출 차단(quote≤110)."""
+- found = 도구턴이 emit한 구조신호(abstentions/jorye_verdicts 확인필요/terminal 실패)로 도출 — 문자열 스니핑 금지(검수 fix#7). _safe_*로 원문 누출 차단(quote≤110)."""
 import json
 from langgraph.types import Command
 from labels import tool_label, done_label
-
-FAIL_TOKENS = ("실패", "미확보", "못찾음", "없음", "빈값", "조회 실패", "추출 실패", "미확정", "확인필요", "오류")
 
 
 def _q(s, n=110):
@@ -84,10 +82,18 @@ def _events(graph, state, cfg, resume=None):
                         args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
                         yield ev("tool_call", node, tool_label(name), {"tool": name, "args": _safe_args(args)})
             elif node == "tools":
+                # found = 이 도구턴의 구조신호로 판정(문자열 스니핑 X): 기권 추가됐나 / 조례판정이 확인필요인가 /
+                #  종료사유가 실패형인가. 정상 부정판정('관련 규제 없음')·정당한 위임결과는 실패로 오표시하지 않음.
+                abst = delta.get("abstentions") or []
+                jvs = delta.get("jorye_verdicts") or []
+                tr = delta.get("terminal_reason")
+                unsure = bool(abst) or any(
+                    (jv.get("verdict") == "확인필요") for jv in jvs if isinstance(jv, dict)) \
+                    or tr in ("site_geocode_failed", "error", "aborted", "fallback_extract_failed")
+                found = not unsure
                 for m in (delta.get("messages") or []):
                     c = _msg_attr(m, "content", "")
                     name = _msg_attr(m, "name")
-                    found = not any(t in str(c) for t in FAIL_TOKENS)
                     yield ev("tool_result", node, (tool_label(name) if name else "결과"),
                              {"tool": name, "found": found, "quote": _q(c, 160)})
                 for cit in (delta.get("citations") or []):
