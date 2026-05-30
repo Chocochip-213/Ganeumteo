@@ -116,19 +116,24 @@ def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
     """행위제한 1차판정 + 조례위임 감지. data.go.kr 1613000.
     입력: zone_ucode=get_land_use의 UQ코드 말단. use_type=**건축법 용도분류상 시설명**(사용자 표현을 건축법 용도로 해석해 전달 — 예 카페→일반음식점, 사무실→업무시설, 다세대→공동주택. API가 이 시설명으로 행위제한 조회). area_cd=get_parcel의 area_cd(PNU 앞5).
     반환 act_verdict∈{가능(법령직접), 조례확인필요(혼재), 조례확인필요}. 빈값·혼재=조례위임(_delegated=True) → 단정 말고 ordin_byeolpyo_fetch로 진행."""
-    rg = W.act(zone_ucode, use_type, area_cd)   # 용도 해석은 LLM이(도구는 받은 시설명 그대로 조회 — 하드코딩 맵 제거)
-    has_y, has_n = (rg and "가능" in rg), (rg and "금지" in rg)
+    det = W.act_detail(zone_ucode, use_type, area_cd)   # item별 reg+근거조항+시설명 — act가 버리던 근거 보존
+    rg = [d["reg"] for d in det]                          # 가부 신호(REG_NM=API 자체 판정 enum; 도구는 읽기만, 단정 아님)
+    has_y, has_n = any("가능" in x for x in rg), any("금지" in x for x in rg)
     if has_y and not has_n:
         v, dele = "가능(법령직접)", False
     elif has_y and has_n:
-        v, dele = "조례확인필요(혼재)", True   # 가능·금지 혼재 → 단정 금지(#4)
+        v, dele = "조례확인필요(혼재)", True   # 가능·금지 혼재 → 단정 금지
     elif has_n:
         v, dele = "조례확인필요", True         # 금지=입지제한/조례위임 가능성
     else:
-        v, dele = "조례확인필요", True         # 빈값=조례 위임
+        v, dele = "조례확인필요", True         # 빈값·조건=조례 위임(조건부는 조례에서 확인)
+    cites = [Citation(source="data", law_name="행위제한(국토부 1613000)", article=d["ref_law"],
+                      quote=f"{d.get('node', '')} → {d['reg']}").model_dump()
+             for d in det if d.get("ref_law")]   # 근거조항(LU_REF_LAW_NM1) 인용 — grounding 복구
+    detail = " / ".join(f"{d.get('node', '')}={d['reg']}({d.get('ref_law', '')})" for d in det) or "빈값"
     return Command(update={"act_verdict": v, "act_reg_raw": rg, "_delegated": dele,
-                           "_toolcalls": ["act_landuse"],
-                           "messages": [_tm(f"행위제한 {use_type}@{zone_ucode}: REG_NM={rg or '빈값'} → {v}", tool_call_id)]})
+                           "citations": cites, "_toolcalls": ["act_landuse"],
+                           "messages": [_tm(f"행위제한 {use_type}@{zone_ucode}: {detail} → {v}", tool_call_id)]})
 
 
 # ── 조례 별표 BodyText (멀티홉 1번째 홉) ─────────────────────
