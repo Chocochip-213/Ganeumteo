@@ -1,0 +1,29 @@
+{
+ "_return": {
+  "terminal_reason": "site_geocode_failed",
+  "status": "재입력필요",
+  "card": {
+   "verdict": "확인필요",
+   "terminal": "site_geocode_failed",
+   "사유": [
+    {
+     "node": "geocode",
+     "사유": "지오코딩 실패"
+    }
+   ],
+   "입지": {
+    "지목": null,
+    "용도지역": null,
+    "도로접면": null
+   },
+   "citations": 0
+  },
+  "abstentions": [
+   {
+    "node": "geocode",
+    "사유": "지오코딩 실패"
+   }
+  ]
+ },
+ "citations": []
+}

@@ -1,0 +1,197 @@
+{
+ "_return": {
+  "terminal_reason": "completed",
+  "status": "완료",
+  "card": {
+   "verdict": "확인필요",
+   "legal_reasoning": {
+    "steps": [
+     {
+      "seq": 1,
+      "kind": "입지",
+      "fact": "지목=전 용도지역=보전녹지지역 도로접면=세로한면(불)",
+      "basis": "vworld",
+      "infer": "",
+      "leads": "",
+      "status": "확정"
+     },
+     {
+      "seq": 2,
+      "kind": "행위제한",
+      "fact": "보전녹지지역 제2종근린생활시설",
+      "basis": "data.go.kr 1613000",
+      "infer": "조례확인필요",
+      "leads": "",
+      "status": "확정"
+     },
+     {
+      "seq": 3,
+      "kind": "조례호목해소",
+      "fact": "조례 별표",
+      "basis": null,
+      "infer": "[stub] 조례별표+건축법령별표1 본문 확보 — 호목 멀티홉 해소는 실 LLM 필요",
+      "leads": "확인필요",
+      "status": "확인필요"
+     },
+     {
+      "seq": 4,
+      "kind": "의제",
+      "fact": "지목=전 → 농지전용허가",
+      "basis": "law",
+      "infer": "",
+      "leads": "",
+      "status": "확정"
+     },
+     {
+      "seq": 5,
+      "kind": "의제",
+      "fact": "형질변경 → 개발행위허가",
+      "basis": "law",
+      "infer": "",
+      "leads": "",
+      "status": "확정"
+     },
+     {
+      "seq": 6,
+      "kind": "규제효과",
+      "fact": "가축사육제한구역",
+      "basis": "가축분뇨의 관리 및 이용에 관한 법률",
+      "infer": "가축사육의 제한 등",
+      "leads": "",
+      "status": "확정"
+     },
+     {
+      "seq": 7,
+      "kind": "규제효과",
+      "fact": "보전녹지지역",
+      "basis": "국토의 계획 및 이용에 관한 법률",
+      "infer": "용도지역 및 용도지구에서의 건축물의 건축 제한 등",
+      "leads": "",
+      "status": "확정"
+     },
+     {
+      "seq": 8,
+      "kind": "규모임계",
+      "fact": "연면적/층수 임계",
+      "basis": "law",
+      "infer": "",
+      "leads": "",
+      "status": "확정"
+     }
+    ],
+    "verdict": "확인필요",
+    "verdict_basis_seq": [
+     2,
+     3
+    ]
+   },
+   "uijae": [
+    {
+     "trigger": "지목=전",
+     "permit_name": "농지전용허가",
+     "stage_key": "농지전용",
+     "citation": null
+    },
+    {
+     "trigger": "형질변경",
+     "permit_name": "개발행위허가",
+     "stage_key": "개발행위",
+     "citation": null
+    }
+   ],
+   "documents": [
+    {
+     "stage": "건축허가",
+     "count": 15,
+     "status": "전수확보"
+    },
+    {
+     "stage": "농지전용",
+     "count": 7,
+     "status": "전수확보"
+    },
+    {
+     "stage": "개발행위",
+     "count": 7,
+     "status": "전수확보"
+    },
+    {
+     "stage": "착공신고",
+     "count": 4,
+     "status": "전수확보"
+    },
+    {
+     "stage": "사용승인",
+     "count": 10,
+     "status": "전수확보"
+    }
+   ],
+   "scale_limits": {
+    "energy_saving_required": false,
+    "structural_safety_required": true,
+    "notes": [
+     "연면적 180.0㎡·2층"
+    ]
+   },
+   "author": {
+    "requires_architect": true,
+    "reason": "신축 연면적 180㎡ → 단서(85㎡↓증축/200㎡↓대수선) 미해당"
+   },
+   "reg_effects": [
+    {
+     "reg_name": "가축사육제한구역",
+     "law_name": "가축분뇨의 관리 및 이용에 관한 법률",
+     "article": "제8조",
+     "effect": "가축사육의 제한 등"
+    },
+    {
+     "reg_name": "보전녹지지역",
+     "law_name": "국토의 계획 및 이용에 관한 법률",
+     "article": "제76조",
+     "effect": "용도지역 및 용도지구에서의 건축물의 건축 제한 등"
+    }
+   ],
+   "citations": 4,
+   "abstentions": []
+  },
+  "abstentions": []
+ },
+ "citations": [
+  {
+   "source": "vworld",
+   "law_name": null,
+   "article": null,
+   "title": "필지 LP_PA_CBND_BUBUN",
+   "quote": "지목 전, 도로접면 None",
+   "url": null,
+   "extract_method": null
+  },
+  {
+   "source": "ordin",
+   "law_name": "춘천시 도시계획 조례",
+   "article": "0014 [별표 14] 보전녹지지역안에서 건축할 수 있는 건축물",
+   "title": null,
+   "quote": ") 별표 14 개정 2024.11.19. 넬 글 글 뜀 뜀 쀈 쀈 뀀 뀀 쀀 뀀 뀀 쀀 삱색 탅 킻 뀀 뀀 쀀 뀀 뀀 쀀 쐀 얲 3뀀 뀀 쀀 쐀 낭 쓆킳 쓕 첻 쐀 뀀 뀀 쀀 뀀 뀀 쀀 쐀 낭 톭 ",
+   "url": null,
+   "extract_method": "인덱스청크"
+  },
+  {
+   "source": "law",
+   "law_name": "건축법 시행령",
+   "article": "0001",
+   "title": null,
+   "quote": "■ 건축법 시행령 [별표 1] <개정 2025. 8. 26.> 용도별 건축물의 종류(제3조의5 관련) 1. 단독주택[단독주택의 형태를 갖춘 가정어린이집·공동생활가정·지역아동센 터ㆍ공동육아나눔터(「아이돌봄 지원법」 제19조에 따른 공동육아나눔터를 말한다. 이하 같다)ㆍ작은도서관(「도서관법」 제4조제2항제1호가목에 따른 작은도서관을 말하며, 해당 주택의 1층에",
+   "url": null,
+   "extract_method": null
+  },
+  {
+   "source": "law",
+   "law_name": "건축법",
+   "article": "§23①",
+   "title": null,
+   "quote": "설계는 건축사가 아니면 할 수 없다",
+   "url": null,
+   "extract_method": null
+  }
+ ]
+}
