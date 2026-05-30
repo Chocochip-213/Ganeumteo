@@ -36,15 +36,16 @@ def lookup_ordin(sigungu, zone, area_cd=""):
             scope, sp = "area_cd5=%s", [acd]
         else:
             scope, sp = "sigungu_org LIKE %s", [f"%{sig}%"]
-        # zone 정확매칭 → 안 되면 core(제N종 제거) 매칭. 둘 다 실패면 MISS(위험한 임베딩-only 폴백 없음)
-        z_core = re.sub(r"제\s*\d+\s*종\s*", "", z).strip()
-        zone_tries = [f"%{z}%"]
-        if z_core and z_core != z:
+        # zone 공백무시 정확매칭(저장 "제1종 일반주거"↔질의 "제1종일반주거") → 안 되면 core(제N종 제거) → 둘 다 실패면 MISS
+        z_ns = z.replace(" ", "")
+        z_core = re.sub(r"제\s*\d+\s*종\s*", "", z).replace(" ", "").strip()
+        zone_tries = [f"%{z_ns}%"]
+        if z_core and z_core != z_ns:
             zone_tries.append(f"%{z_core}%")
         with db.connect(timeout=3) as c:
             row = None
             for zp in zone_tries:
-                q = _SQL.format(scope=scope, zonef=" AND zone LIKE %s")
+                q = _SQL.format(scope=scope, zonef=" AND replace(zone,' ','') LIKE %s")
                 row = c.execute(q, [qv, *sp, zp, qv]).fetchone()
                 if row:
                     break
