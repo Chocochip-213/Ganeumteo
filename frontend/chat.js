@@ -441,14 +441,17 @@ function pushTrace(c, ev) {
   if (!c) return;
   if (!Array.isArray(c.trace)) c.trace = [];
   c.trace.push({ kind: ev.kind, node: ev.node || null, label: ev.label || "", detail: ev.detail || null });
+  // 사고과정 패널이 열려있으면 라이브 갱신(ChatGPT식 실시간 추론) — 최신 step으로 스크롤
+  const p = $("#resultPanel");
+  if (p && p.classList.contains("open") && c === S.active) { renderPanel(c); const b = $("#rpBody"); if (b) b.scrollTop = b.scrollHeight; }
 }
 
 // 채팅의 접힌 "검토 중" 상태 버블 생성 → 핸들 반환(현재 1줄 갱신 / 답변으로 교체).
 function makeThinking() {
   const wrap = el("div", "msg ai");
   wrap.innerHTML = `<div class="av"></div><div class="col"><div class="who">가늠이</div>`
-    + `<div class="bubble thinking-bubble"><span class="think-spin"></span><span class="tb-t">검토 중…</span><span class="tb-step"></span></div></div>`;
-  msgs().appendChild(wrap); scrollBottom();
+    + `<div class="bubble thinking-bubble"><span class="think-spin"></span><span class="tb-t">검토 중…</span><span class="tb-step"></span><button class="am-open tb-live" data-act="openpanel">${I.route} 사고과정 보기</button></div></div>`;
+  msgs().appendChild(wrap); wireDynamic(); scrollBottom();
   const stepEl = wrap.querySelector(".tb-step");
   return {
     wrap,
