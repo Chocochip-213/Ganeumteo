@@ -2,7 +2,9 @@
 """agent 노드 — LLM 키 있으면 ChatAnthropic(진짜 ReAct), 없으면 결정적 stub-planner.
 stub은 실제 tool_calls를 발행 → LangGraph ToolNode+Command 브리지를 진짜로 구동(지능만 스크립트)."""
 import os, uuid
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage
+from langchain_core.messages.utils import count_tokens_approximately
+from langchain.agents.middleware.context_editing import ClearToolUsesEdit   # Anthropic clear_tool_uses_20250919 미러(공식)
 from tools import TOOLS
 import wf_docs_agent as DOC
 
@@ -118,25 +120,15 @@ def _agent_invoke(llm, msgs):
                 "abstentions": [{"node": "agent", "사유": f"LLM 예외 {type(e).__name__}: {str(e)[:120]}"}]}
 
 
-def _fit_context(msgs, budget=16000, head=600, protect=2):
-    """GMS 프록시 요청 크기 한도(~40KB) 회피 — 진단이 길어져 별표·조례 원문이 쌓이면 요청이 한도를 넘어
-    '[GMS] Model not found' 400으로 죽던 근본원인 방지. 오래된 ToolMessage content를 축약(최근 protect개·구조는 보존)."""
-    def sz(m): return len(str(getattr(m, "content", "") or ""))
-    total = sum(sz(m) for m in msgs)
-    if total <= budget:
-        return msgs
-    tool_idxs = [i for i, m in enumerate(msgs) if isinstance(m, ToolMessage)]
-    keep = set(tool_idxs[-protect:])
+# 컨텍스트 편집 = LangChain 내장 ClearToolUsesEdit(Anthropic clear_tool_uses_20250919 미러).
+# 근본원인: 진단이 길어져 별표·조례 원문이 쌓이면 LLM 요청 body가 GMS 프록시 한도(~40KB)를 넘어
+# '[GMS] Model not found' 400으로 죽음 → 토큰 trigger 초과 시 오래된 도구결과를 '[cleared]'로 비움(최근 keep개=현재 추론 보존).
+# 손수 truncate 대신 공식 구현 채택(토큰기반·idempotent). trigger 낮춤(기본 100k는 GMS 한도엔 무의미). state엔 full 유지·LLM 요청에만 적용.
+_CTX_EDIT = ClearToolUsesEdit(trigger=6000, keep=3, clear_at_least=0)
+
+def _fit_context(msgs):
     out = list(msgs)
-    for i in tool_idxs:
-        if total <= budget:
-            break
-        if i in keep:
-            continue
-        m = out[i]; cur = sz(m)
-        if cur > head:
-            out[i] = ToolMessage(content=str(m.content)[:head] + " …(이전 도구결과 축약)", tool_call_id=m.tool_call_id)
-            total -= (cur - head - 18)
+    _CTX_EDIT.apply(out, count_tokens=count_tokens_approximately)
     return out
 
 
