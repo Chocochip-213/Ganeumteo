@@ -697,10 +697,8 @@ function answerSummaryLines(card, env, full) {
   }
   // 2) 다음 할 일/유의 1줄
   const needs = steps.filter((s) => s.status === "확인필요").length;
-  const stages = arr(card.documents).map((d) => d.stage || d.stage_key).filter(Boolean);
   if (needs) out.push(`다만 ${needs}개 항목은 자동 조회가 안 돼 <b>직접 확인</b>이 필요해요.`);
-  if (stages.length) out.push(`제출 단계는 <b>${esc(stages.join(" → "))}</b> 순이에요. 자세한 서류·근거는 아래 ‘상세 보기’에서요.`);
-  else out.push(`자세한 근거·서류·규모·부담금은 아래 ‘상세 보기’에서 확인하세요.`);
+  out.push(`자세한 서류·근거·규모·부담금은 아래 ‘상세 보기’에서 확인하세요.`);
   return out.slice(0, 3);
 }
 
@@ -1006,7 +1004,12 @@ function docCards(card) {
   const docs = orderedDocs(card);
   if (!docs.length) return `<div class="card card-pad"><div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 제출 서류</span></div><p style="font-size:14px;color:var(--fg-3);margin:6px 0 0">서류 단계가 산출되지 않았어요. 관할 기관(해당 시·군·구청 건축과)에 직접 문의가 필요해요.</p></div>`;
   const uijaeKeys = new Set(arr(card.uijae).map((u) => u && u.stage_key).filter(Boolean));
-  return docs.map((d, i) => docStageCard(d, i + 1, uijaeKeys.has(String(d.stage || d.stage_key || "")))).join("");
+  // 의제(농지전용 등)는 건축허가에 함께 처리(건축법 §11⑤) — 순번 안 매기고, 본 단계(건축허가·착공·사용승인)만 1·2·3.
+  let n = 0;
+  return docs.map((d) => {
+    const u = uijaeKeys.has(String(d.stage || d.stage_key || ""));
+    return docStageCard(d, u ? 0 : ++n, u);
+  }).join("");
 }
 
 function docStageCard(d, num, isUijae) {
@@ -1026,12 +1029,10 @@ function docStageCard(d, num, isUijae) {
   const groupHtml = (g) => {
     const h = g.head || {};
     const name = String(h.doc_name || "").trim();
-    const proviso = h.has_proviso ? `<span class="ds-proviso">${I.bang} 단서</span>` : "";
     const mokHtml = g.moks.map((m) => {
-      const mp = m.has_proviso ? `<span class="ds-proviso">${I.bang} 단서</span>` : "";
-      return `<div class="ds-mok"><span class="mbar"></span><span class="dtxt">${esc(String(m.doc_name || "").trim())}${mp}</span>${formLink(m, "양식")}</div>`;
+      return `<div class="ds-mok"><span class="mbar"></span><span class="dtxt">${esc(String(m.doc_name || "").trim())}</span>${formLink(m, "양식")}</div>`;
     }).join("");
-    return `<div class="ds-doc"><span class="dchk">${I.check}</span><span class="dtxt">${esc(name) || "(서류명 없음)"}${proviso}</span>${formLink(h, "양식 받기")}</div>${mokHtml}`;
+    return `<div class="ds-doc"><span class="dchk">${I.check}</span><span class="dtxt">${esc(name) || "(서류명 없음)"}</span>${formLink(h, "양식 받기")}</div>${mokHtml}`;
   };
 
   // 필수(항상 제출) / 조건부(해당 시만) 분리 — 호 전수 덤프 대신 정직하게
@@ -1071,7 +1072,7 @@ function docStageCard(d, num, isUijae) {
 
   return `<div class="doc-stage ${ok ? "" : "na"}">
     <div class="ds-head">
-      <div class="ds-num">${num}</div>
+      ${isUijae ? `<div class="ds-num ds-num-u" title="건축허가에 함께 처리되는 의제(건축법 §11⑤)">의제</div>` : `<div class="ds-num">${num}</div>`}
       <div class="ds-main"><div class="ds-t">${esc(stage)}</div><div class="ds-law">${sub}</div></div>
       <span class="ds-badge ${ok ? "ok" : "na"}">${ok ? "법정 제출목록" : "확인필요"}</span>
     </div>

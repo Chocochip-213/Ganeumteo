@@ -360,7 +360,7 @@ def law_article_fetch(law_name: str, article: str, tool_call_id: Annotated[str, 
 
 # ── 서류·규모·작성주체 ───────────────────────────────────────
 @tool
-def docs_for_stage(stage_key: str, when_note: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+def docs_for_stage(stage_key: str, when_note: str = "", *, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """단계별 시행규칙 첨부서류 호 전수(누락0). docs_for(stage).
     입력 stage_key: '건축허가'·'착공신고'·'사용승인' + record_uijae로 만든 의제 stage_key(농지전용/산지전용/개발행위/초지전용/사도개설)만. 'PNU'·'의제단계' 등 placeholder 금지.
     when_note: 이 단계를 '언제' 하는지 사용자에게 보일 한 줄(예 '공사 착수 직전 신고', '공사 완료 후 사용 전 신청'). 건축법 절차(허가→착공→사용승인) 근거로 네가 생성. 의제 단계면 '건축허가 시 함께 의제처리'. 모르면 빈 문자열(법 조문제목으로 대체)."""

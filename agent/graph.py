@@ -172,6 +172,8 @@ def compose(state):
         "uijae": state.get("uijae"),
         "documents": [{"stage": d["stage_key"], "count": d.get("count", 0), "status": d["status"],
                        "law": d.get("law", ""), "article": d.get("article", ""),
+                       "when_note": d.get("when_note", ""), "when_law": d.get("when_law", ""),
+                       "when_title": d.get("when_title", ""), "when_quote": d.get("when_quote", ""),
                        "apply_title": d.get("apply_title", ""), "apply_hwp": d.get("apply_hwp", ""),
                        "apply_pdf": d.get("apply_pdf", ""), "items": d.get("items", [])}
                       for d in state.get("documents", [])],
