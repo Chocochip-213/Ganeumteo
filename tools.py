@@ -477,7 +477,10 @@ def record_ordinance_ruling(
         hojeok_path: str, cited_count: int,
         tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """agent 멀티홉 호목해소 결론 커밋. verdict는 위 3개 enum 중 하나만(자유서술 금지).
-    환각가드는 build_reasoning(basis)·route(citations==0→abstain)가 담당 — 여기선 LLM이 커밋한 enum을 그대로 기록."""
+    환각가드: '가능/불가' 단정은 인용근거(cited_count≥1) 필수(precondition) + build_reasoning(basis)·route(citations==0→abstain) 다층."""
+    if verdict in ("가능", "불가") and cited_count < 1:   # 근거 없는 단정 거부 — 재호출 유도(_toolcalls 안 남겨 retry 열어둠)
+        return Command(update={"messages": [_tm(
+            f"<tool_use_error>'{verdict}' 단정은 인용 근거가 필요(cited_count≥1). 별표 원문 호목을 인용해 다시 커밋하거나, 근거 없으면 verdict='확인필요'로 커밋하라.</tool_use_error>", tool_call_id)]})
     return Command(update={"jorye_verdicts": [JoryeVerdict(verdict=verdict, reason=hojeok_path[:200]).model_dump()],
                            "_toolcalls": ["record_ordinance_ruling"],
                            "messages": [_tm(f"조례판정 기록: {verdict} ({hojeok_path})", tool_call_id)]})
