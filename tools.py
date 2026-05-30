@@ -473,9 +473,15 @@ def request_human_input(question: str, fields: list, tool_call_id: Annotated[str
         return Command(update={"terminal_reason": "aborted", "_toolcalls": ["request_human_input"],
                                "messages": [_tm("사용자 중단", tool_call_id)]})
     upd = {"_toolcalls": ["request_human_input"], "messages": [_tm(f"사용자 입력: {ans}", tool_call_id)]}
-    for k in ("floor_area", "floor_count", "use_type"):
-        if isinstance(ans, dict) and k in ans:
-            upd[k] = ans[k]
+    for k in ("floor_area", "floor_count", "use_type"):   # 알려진 상태필드만 충전(숫자는 형변환). 그 외 임의 응답은 위 메시지로 LLM이 읽음
+        if isinstance(ans, dict) and k in ans and ans[k] not in (None, ""):
+            v = ans[k]
+            if k in ("floor_area", "floor_count"):
+                try:
+                    v = float(v) if k == "floor_area" else int(float(v))
+                except (TypeError, ValueError):
+                    continue
+            upd[k] = v
     return Command(update=upd)
 
 
