@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>가늠터 — 건축 인허가 사전진단</title>
+  <link rel="stylesheet" href="./theme.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">가<span class="mk">늠</span>터</div>
+    <div class="sub">건축 인허가 AI 사전진단 · 주소만 넣으면 가부·서류·근거를 법령으로</div>
+    <div class="scope">demo · 경기남부 14개 시군 조례 인덱스</div>
+  </header>
+
+  <form id="in">
+    <div><label for="address">주소 (지번/도로명)</label><input id="address" value="경기도 양평군 양평읍 양근리 100" /></div>
+    <div><label for="use">용도</label><input id="use" value="카페" /></div>
+    <div><label for="area">연면적(㎡)</label><input id="area" value="264" inputmode="decimal" /></div>
+    <div><label for="floors">층수</label><input id="floors" value="1" inputmode="numeric" /></div>
+    <button id="go" type="submit">진단 시작</button>
+  </form>
+
+  <main>
+    <section id="trace-pane">
+      <div class="pane-h">실행 트레이스 (에이전트 사고·도구 호출)</div>
+      <div id="trace"></div>
+    </section>
+    <section id="card-pane">
+      <div id="hitl-wrap"></div>
+      <div id="card"><p class="placeholder">주소·용도·규모를 넣고 <b>진단 시작</b>을 누르세요.<br>에이전트가 입지→행위제한→조례→서류→규모를 도구로 직접 조회합니다.</p></div>
+    </section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
