@@ -423,12 +423,20 @@ def levy_estimate(levy_type: str, land_price: Optional[float] = None, area_m2: O
 
 @tool
 def author_rule_tool(floor_area: float, work_type: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """작성주체(건축사 필수 여부). 건축법 §23① 라이브 + 면적룰."""
+    """작성주체(건축사 필수 여부). 건축법 §23① 원칙·단서를 라이브 fetch해 원문(grounding)을 반환.
+    면제(비건축사 가능)는 §23① 단서의 좁은 예외(소규모 증축·대수선 등) — 단서 원문을 읽고 이 케이스가 면제에 해당하는지는 네가 판단하라.
+    requires_architect는 fail-closed로 기본 '필수'(True); 단서 면제에 명확히 해당하면 네 서술로 그 근거(어느 호·면적)를 밝혀라."""
     a = RM.author_rule(int(floor_area), work_type or "신축")
-    au = AuthorRule(requires_architect=("건축사 필수" in a["이번_케이스"]), reason=a["사유"]).model_dump()
-    cite = Citation(source="law", law_name="건축법", article="§23①", quote=a["원칙"]).model_dump()
+    if a.get("상태") == "확인필요":   # §23① fetch 실패 → 기권(fail-closed, 날조 금지)
+        return Command(update={"abstentions": [{"node": "author_rule_tool", "사유": a.get("사유", "§23① 미확보")}],
+                               "_toolcalls": ["author_rule_tool"],
+                               "messages": [_tm("작성주체: §23① 원문 미확보 → 확인필요", tool_call_id)]})
+    # 가부 단정 없음 — 원칙·단서 원문만 grounding. requires_architect는 fail-closed 기본 True(면제 판단은 LLM이 단서 원문 대조).
+    au = AuthorRule(requires_architect=True, reason=a["사유"]).model_dump()
+    cite = Citation(source="law", law_name="건축법", article="§23①", quote=a.get("원칙", "")[:200]).model_dump()
+    proviso = " / ".join(a.get("단서", [])) or "(단서 없음)"
     return Command(update={"author": au, "citations": [cite], "_toolcalls": ["author_rule_tool"],
-                           "messages": [_tm(f"작성주체: {a['이번_케이스']} ({a['사유']})", tool_call_id)]})
+                           "messages": [_tm(f"작성주체 §23① — 원칙: {a.get('원칙','')[:120]} | 단서(면제호): {proviso[:400]} | 케이스: {work_type or '신축'} {int(floor_area)}㎡(면제 해당여부는 단서 원문 대조로 판단)", tool_call_id)]})
 
 
 @tool
