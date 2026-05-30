@@ -203,9 +203,10 @@ def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, I
 
 @tool
 def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """국가법령(본법/시행령/시행규칙)의 별표 inline 텍스트. 어느 법이든.
-    입력: law_name=법령명. 정식명이 안 맞으면 검색 후보 목록을 돌려주니, 그 중 맞는 정식명으로 다시 호출하라(여러 이름 시도 OK). byeolpyo_kw=별표 번호('1') 또는 제목 키워드('용도별','허용행위').
-    용도: 조례 별표가 가리킨 국가법령 별표 해소, 또는 행위제한이 특정 법령에 있을 때 그 법의 별표 직접 조회."""
+    """국가법령(본법/시행령/시행규칙)의 별표 inline 텍스트(원문 전체). 어느 법이든.
+    입력: law_name=법령명(안 맞으면 후보 목록 반환→재시도). byeolpyo_kw=별표 번호('1') 또는 제목 키워드('용도별').
+    별표 본문 전체를 반환하니(예 건축법 시행령 별표1 용도분류 ~11k자), 네가 원문을 직접 읽어 해당 호목·용도 포함 여부를 끝까지 확인하라.
+    용도: 조례 별표가 가리킨 국가법령 별표 해소(호목 멀티홉), 또는 행위제한이 특정 법령에 있을 때 그 법의 별표 직접 조회."""
     a = L.search(law_name, "law")["LawSearch"]["law"]
     rs = [x for x in (a if isinstance(a, list) else [a]) if isinstance(x, dict)]
     cand = [x for x in rs if x.get("법령명한글") == law_name]
@@ -226,8 +227,10 @@ def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[
         if (numkey and numkey == bno) or (byeolpyo_kw.strip() and byeolpyo_kw.strip() in bti):   # 번호 또는 제목 부분문자열(입력기반 일반규칙만)
             t = re.sub(r"\s+", " ", _S(b.get("별표내용")))
             cite = Citation(source="law", law_name=law_name, article=_S(b.get("별표번호")), quote=t[:200]).model_dump()
+            body = t[:20000]   # 별표 본문 전체 노출(건축법 별표1 ~11k자 — gpt-5.2 컨텍스트에 충분). 호 파싱 휴리스틱 안 씀, LLM이 원문 직접 읽음
+            tail = "" if len(t) <= 20000 else f"\n\n…[본문 {len(t)}자 중 20000자까지 표시·이후 절단. 더 좁은 별표 번호/제목으로 재호출하거나 끝내 못 찾으면 확인필요로 둬라]"
             return Command(update={"citations": [cite], "_toolcalls": ["law_byeolpyo_fetch"],
-                                   "messages": [_tm(f"[{law_name} {byeolpyo_kw}]\n{t[:7000]}", tool_call_id)]})
+                                   "messages": [_tm(f"[{law_name} {byeolpyo_kw}]\n{body}{tail}", tool_call_id)]})
     cands = [(_S(b.get("별표번호")), _S(b.get("별표제목"))[:30]) for b in bu if isinstance(b, dict)]   # 형제(law_article_fetch)와 동일 — 후보 돌려줘 LLM 재호출
     return Command(update={"_toolcalls": ["law_byeolpyo_fetch"],
                            "messages": [_tm(f"별표 못찾음. '{law_name}' 별표 후보: {cands}. 정확한 번호나 제목으로 재호출.", tool_call_id)]})
