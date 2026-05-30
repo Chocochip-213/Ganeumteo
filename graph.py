@@ -110,7 +110,9 @@ def compose(state):
         "verdict": state.get("verdict"),
         "legal_reasoning": state.get("legal_reasoning"),
         "uijae": state.get("uijae"),
-        "documents": [{"stage": d["stage_key"], "count": d.get("count", 0), "status": d["status"]} for d in state.get("documents", [])],
+        "documents": [{"stage": d["stage_key"], "count": d.get("count", 0), "status": d["status"],
+                       "law": d.get("law", ""), "article": d.get("article", ""), "items": d.get("items", [])}
+                      for d in state.get("documents", [])],
         "scale_limits": state.get("scale_limits"),
         "author": state.get("author"),
         "reg_effects": state.get("reg_effects"),
