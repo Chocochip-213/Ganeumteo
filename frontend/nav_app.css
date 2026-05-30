@@ -395,6 +395,7 @@ input, textarea { font-family: inherit; }
 .term-pop { position: fixed; z-index: 200; max-width: 300px; background: var(--neutral-900); color: #fff; border-radius: 13px; padding: 14px 16px; box-shadow: var(--shadow-3); font-size: 14px; line-height: 1.55; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out); }
 .term-pop.show { opacity: 1; transform: translateY(0); }
 .term-pop .tp-t { font-weight: 700; font-size: 14.5px; margin-bottom: 4px; color: var(--sky-200); }
+.term-pop .tp-ctx { margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.16); font-size: 13px; line-height: 1.5; color: #e6f0ff; }
 
 .hidden { display: none !important; }
 /* 안내서 미리보기 모달 */

@@ -202,6 +202,7 @@ def compose(state):
         "parking_req": state.get("parking_req"),       # 부설주차 N대(parking_quota)
         "levies": state.get("levies", []),             # 부담금(농지보전·대체산림·개발) — 금액 없으면 status=확인필요
         "author": state.get("author"),
+        "term_notes": state.get("term_notes"),   # 진단맥락 용어설명(프론트 popover)
         "reg_effects": state.get("reg_effects"),
         "citations": len(state.get("citations", [])),
         "abstentions": state.get("abstentions", []),

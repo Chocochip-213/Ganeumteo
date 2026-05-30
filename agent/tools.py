@@ -410,6 +410,18 @@ def assess_conditional_docs(assessments: list, tool_call_id: Annotated[str, Inje
 
 
 @tool
+def explain_terms(notes: list, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+    """진단에 나오는 전문용어를 '이 케이스 맥락'에 맞춰 평이하게 설명(사용자가 용어에 마우스 올리면 표시).
+    notes=[{term, note}]. term=용어(의제·작성주체·건폐율·용적률·형질변경·별표 등), note=이 진단 상황에 맞춘 한두 문장(이미 확보한 사실 근거; 일반 사전정의 말고 '이 땅/이 건물'에 특정). 핵심 2~5개만."""
+    d = {}
+    for n in (notes or []):
+        if isinstance(n, dict) and n.get("term"):
+            d[str(n["term"])] = str(n.get("note", ""))[:300]
+    return Command(update={"term_notes": d, "_toolcalls": ["explain_terms"],
+                           "messages": [_tm(f"용어 {len(d)}개 맥락설명", tool_call_id)]})
+
+
+@tool
 def compute_scale(floor_area: float, floor_count: int, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """연면적/층수→규모상한 결정적 룰(에너지≥500·구조안전≥200 or 2층)."""
     sl = ScaleLimit(energy_saving_required=floor_area >= 500,
@@ -587,7 +599,7 @@ def request_human_input(question: str, fields: list, tool_call_id: Annotated[str
 
 
 TOOLS = [geocode, get_parcel, get_land_use, get_land_price, act_landuse,
-         ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, compute_scale,
+         ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
          compute_envelope, parking_quota, levy_estimate,
          author_rule_tool, reg_effect_resolve_tool, record_uijae, record_ordinance_ruling,
          request_human_input]

@@ -1154,7 +1154,10 @@ function wireTerms() {
 }
 function showPop(t) {
   hidePop(); const g = GLOSSARY[t.dataset.term]; if (!g) return;
-  pop = el("div", "term-pop", `<div class="tp-t">${esc(g[0])}</div>${esc(g[1])}`);
+  // 진단맥락 용어설명(에이전트 생성) — 정적 정의 아래 '이 진단에선' 단락. 없으면 정적 정의만.
+  const tn = (S.active && S.active.result && S.active.result._return && S.active.result._return.card && S.active.result._return.card.term_notes) || {};
+  const note = tn[t.dataset.term];
+  pop = el("div", "term-pop", `<div class="tp-t">${esc(g[0])}</div>${esc(g[1])}${note ? `<div class="tp-ctx">이 진단에선 — ${esc(String(note))}</div>` : ""}`);
   document.body.appendChild(pop);
   const r = t.getBoundingClientRect();
   let top = r.bottom + 8, left = Math.min(r.left, window.innerWidth - 316);
