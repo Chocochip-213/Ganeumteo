@@ -34,19 +34,12 @@ def _clean(full):
 
 
 def _extract_hwp_ole(raw):
-    """.hwp(OLE) → BodyText/Section0 (zlib raw deflate -15), PrvText fallback."""
+    """.hwp(OLE) → PARA_TEXT(tag 67) 레코드 추출(L.hwp_ole_text). 통째 utf-16 디코드는 레코드헤더까지 디코드해 쓰레기 → 레코드 파싱. 실패시 PrvText fallback."""
+    text = L.hwp_ole_text(raw)
+    if text:
+        return _clean(text), "BodyText"
     o = olefile.OleFileIO(io.BytesIO(raw))
     try:
-        secs = sorted([s for s in o.listdir() if len(s) > 1 and s[0] == "BodyText"], key=lambda s: s[1])
-        if secs:
-            parts = []
-            for s in secs:
-                d = o.openstream(s).read()
-                try:
-                    parts.append(zlib.decompress(d, -15).decode("utf-16-le", "ignore"))
-                except Exception:
-                    parts.append(d.decode("utf-16-le", "ignore"))
-            return _clean(" ".join(parts)), "BodyText"
         return _clean(o.openstream("PrvText").read().decode("utf-16-le", "ignore")), "PrvText(캡)"
     finally:
         o.close()
