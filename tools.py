@@ -87,9 +87,15 @@ def get_land_use(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> 
 
 @tool
 def get_land_price(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """PNU→공시지가(원/㎡). VWorld ned getIndvdLandPriceAttr."""
-    raw_p = W.dig(W.ned("getIndvdLandPriceAttr", pnu, {"stdrYear": "2024"}), "pblntfPclnd")
-    p = int(raw_p[0]) if raw_p and str(raw_p[0]).isdigit() else None
+    """PNU→공시지가(원/㎡). VWorld ned getIndvdLandPriceAttr. 시계열 전체를 받아 기준연도 내림차순 최신값 채택(연도 하드코딩 없음)."""
+    rows = W.ned("getIndvdLandPriceAttr", pnu)   # stdrYear 미지정 → 전 연도 시계열 반환
+    pairs = []                                    # 레코드별 (기준연도, 공시지가) 묶음 — 최신연도 채택용
+    for rec in re.findall(r"\{[^{}]*\}", json.dumps(rows, ensure_ascii=False)):
+        ym = re.search(r'"stdrYear"\s*:\s*"(\d{4})"', rec)
+        pm = re.search(r'"pblntfPclnd"\s*:\s*"(\d+)"', rec)
+        if ym and pm and int(pm.group(1)) > 0:
+            pairs.append((int(ym.group(1)), int(pm.group(1))))
+    p = max(pairs)[1] if pairs else None          # 기준연도 desc 정렬 후 최신값
     upd = {"_toolcalls": ["get_land_price"], "messages": [_tm(f"공시지가={p}원/㎡", tool_call_id)]}
     if p is not None:
         upd["land_price"] = p
