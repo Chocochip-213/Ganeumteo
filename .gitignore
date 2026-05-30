@@ -7,3 +7,5 @@ infra/_test_rag.py
 backend/_regress.py
 qa/fixtures/*.txt
 .venv/
+.idea/
+backend/_verify_docs.py

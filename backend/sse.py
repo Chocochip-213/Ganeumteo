@@ -12,6 +12,13 @@ def _q(s, n=110):
     return str(s or "")[:n]
 
 
+def _li(x):
+    """리스트 항목 표시값 — dict면 raw repr 대신 사람이 읽는 label/name/key만(트레이스 정리)."""
+    if isinstance(x, dict):
+        return str(x.get("label") or x.get("name") or x.get("key") or x.get("title") or "항목")
+    return str(x)
+
+
 def _safe_args(args):
     if not isinstance(args, dict):
         return {}
@@ -22,7 +29,7 @@ def _safe_args(args):
         elif isinstance(v, (int, float, bool)):
             out[k] = v
         elif isinstance(v, list):
-            out[k] = [str(x)[:60] for x in v[:6]]
+            out[k] = [_li(x)[:60] for x in v[:6]]
         else:
             out[k] = str(v)[:120]
     return out
@@ -114,6 +121,8 @@ def _events(graph, state, cfg, resume=None):
                 yield ev("done", node, "진단 완료", {"terminal_reason": delta.get("terminal_reason")})
             elif node == "abstain":
                 yield ev("abstain", node, "자동판정 보류", {"terminal_reason": delta.get("terminal_reason")})
+            elif node == "chat_end":   # 인사·잡담 트리아지 종료 — done 보장(없으면 EOF→onerror 의존→재연결 취약)
+                yield ev("done", node, "대화 응답", {"terminal_reason": "chat"})
 
     snap = graph.get_state(cfg)                                    # interrupt(HITL) 감지
     if snap.next:

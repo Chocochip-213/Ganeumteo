@@ -16,6 +16,17 @@ ORDER BY embedding <=> %s
 LIMIT 1
 """
 
+_QV_CACHE = {}   # zone별 RAG 쿼리벡터 메모 — 유한 용도지역(~20종) → 프로세스 생애 1회만 임베딩(재연결 폭주에도 비용 0)
+def _query_vec(z):
+    v = _QV_CACHE.get(z)
+    if v is None:
+        e = embed_one(f"{z} 안에서 건축할 수 있는 건축물")
+        if e is None:
+            return None          # 실패는 캐시 안 함(다음 재시도 허용)
+        v = np.asarray(e, dtype="float32")
+        _QV_CACHE[z] = v
+    return v
+
 
 def lookup_ordin(sigungu, zone, area_cd=""):
     # 결측 가드(#1): zone 없으면 'None 안에서…' 임베딩 → 거짓 HIT → 차단
@@ -27,10 +38,9 @@ def lookup_ordin(sigungu, zone, area_cd=""):
         return None
     z = str(zone).strip()
     try:
-        qv = embed_one(f"{z} 안에서 건축할 수 있는 건축물")
+        qv = _query_vec(z)        # 캐시된 쿼리벡터(중복 임베딩 차단 — 재연결·반복조회에도 1회)
         if qv is None:
             return None
-        qv = np.asarray(qv, dtype="float32")
         # 정확 키(area_cd5) 우선, 없으면 sigungu_org LIKE(데모 지자체는 명칭 명확)
         if acd:
             scope, sp = "area_cd5=%s", [acd]

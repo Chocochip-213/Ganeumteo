@@ -99,6 +99,26 @@
   .ds-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; border-radius: 9px; padding: 8px 12px; border: 1px solid var(--border-2); background: var(--bg-surface); color: var(--sky-700); text-decoration: none; transition: background var(--t-fast) var(--ease-out); }
   .ds-link:hover { background: var(--sky-50); }
   .ds-link svg { flex-shrink: 0; }
+  /* 주신청서 양식 = 핵심 서식 강조 다운로드 */
+  .ds-apply-wrap { padding: 12px 16px 4px; }
+  .ds-apply { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 11px; background: var(--sky-500); color: #fff; text-decoration: none; transition: filter var(--t-fast) var(--ease-out); }
+  .ds-apply:hover { filter: brightness(0.95); }
+  .ds-apply svg { flex-shrink: 0; }
+  .ds-apply span { display: flex; flex-direction: column; min-width: 0; font-size: 13.5px; font-weight: 700; line-height: 1.3; }
+  .ds-apply em { font-style: normal; font-size: 11px; font-weight: 600; opacity: 0.85; margin-top: 2px; }
+  /* 호별 별지서식 다운로드(인라인 소형) */
+  .ds-form { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; align-self: center; margin-left: 8px; font-size: 11.5px; font-weight: 700; color: var(--sky-700); background: var(--sky-50); border: 1px solid var(--border-2); border-radius: 8px; padding: 3px 8px; text-decoration: none; white-space: nowrap; transition: filter var(--t-fast) var(--ease-out); }
+  .ds-form:hover { filter: brightness(0.96); }
+  .ds-form svg { flex-shrink: 0; }
+  /* 조건부(해당 시만) 접기 */
+  .ds-cond { border-top: 1px solid var(--border-1); }
+  .ds-cond > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 10px 16px; font-size: 12.5px; font-weight: 700; color: var(--fg-3); user-select: none; }
+  .ds-cond > summary::-webkit-details-marker { display: none; }
+  .ds-cond > summary svg { color: var(--warm); flex-shrink: 0; }
+  .ds-cond > summary:hover { color: var(--fg-2); }
+  .ds-cond[open] > summary { color: var(--fg-2); }
+  .ds-cond .ds-items { padding-top: 0; opacity: 0.84; }
+  .ds-cond .ds-doc:first-child { border-top: none; }
 
   /* ── 우측 패널: 상세 추론 플로우(시간순 타임라인) ── */
   .flow-list { position: relative; display: flex; flex-direction: column; }
@@ -119,6 +139,17 @@
   .flow-item.na .fi-dot { background: var(--warm); }
   .flow-item .flow-link { display: inline-flex; align-items: center; gap: 4px; color: var(--sky-700); text-decoration: none; font-weight: 600; white-space: nowrap; }
   .flow-item .flow-link svg { flex-shrink: 0; }
+  /* 도구 호출/결과·단계마커 = 살짝 연하게(가늠이의 판단·근거·판정이 도드라지게) */
+  .flow-item.call .fi-t, .flow-item.res .fi-t, .flow-item.done .fi-t { font-weight: 600; color: var(--fg-3); }
+  .flow-item.call .fi-d, .flow-item.res .fi-d { color: var(--fg-3); font-size: 12px; }
+  .flow-item.call .fi-dot, .flow-item.res .fi-dot, .flow-item.done .fi-dot { opacity: 0.5; }
+  .flow-item.call .fi-main, .flow-item.res .fi-main { padding-bottom: 10px; }
+  /* 가늠이의 판단 = 도드라지게 */
+  .flow-item.think .fi-t { font-size: 14px; color: var(--fg-1); }
+  .flow-item.think .fi-dot { box-shadow: 0 0 0 3px var(--bg-page), 0 0 0 5px var(--sky-100, rgba(56,160,255,0.18)); }
+  /* HITL 대화형 — 질문 아래 안내 한 줄 */
+  .hitl-hint { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-1); font-size: 12px; color: var(--fg-3); display: flex; align-items: center; gap: 5px; }
+  .hitl-hint svg { flex-shrink: 0; opacity: 0.7; }
 
   /* ── 우측 패널: 규모/부담금/주차 미니 카드 ── */
   .mini-card { padding: 16px 18px; }

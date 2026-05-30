@@ -24,6 +24,7 @@ def diagnose_stream(address: str, use_type: str, floor_area: float = None, floor
     st = fresh_state(address, use_type, floor_area, floor_count)
 
     def gen():
+        yield "retry: 86400000\n\n"   # EventSource 자동재연결 무력화 — 끊겨도 재접속 안 함(재진단·재임베딩 폭주 차단)
         meta = {"seq": 0, "ts_seq": 0, "kind": "meta", "node": None, "label": "접수",
                 "detail": {"thread_id": tid, "address": address, "use_type": use_type,
                            "floor_area": floor_area, "floor_count": floor_count}}
