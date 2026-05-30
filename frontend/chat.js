@@ -16,6 +16,16 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const arr = (v) => (Array.isArray(v) ? v : []);
 const lawURL = (q) => "https://www.law.go.kr/법령/" + encodeURIComponent(q || "");
+// 출처 원문 링크: data(행위제한 API)는 law_name이 'API 라벨'이라 깨진 링크 → 실제 법령(article의 법령명)으로. 그 외는 law_name.
+const lawHref = (c) => {
+  if (!c) return null;
+  if (c.url) return c.url;
+  if (c.source === "data") {
+    const ln = String(c.article || "").split(/별표|제\s*\d/)[0].trim();
+    return ln ? lawURL(ln) : null;
+  }
+  return c.law_name ? lawURL(c.law_name) : null;
+};
 
 // ── SVG 아이콘 (디자인 원본 재사용) ──
 const I = {
@@ -781,7 +791,7 @@ function flowRow(ev) {
   }
   if (k === "citation") {
     const head = [d.law_name, d.article, d.title].filter(Boolean).join(" ") || srcKo(d.source);
-    const href = d.url || (d.law_name ? lawURL(d.law_name) : null);
+    const href = lawHref(d);
     const link = href ? ` <a href="${esc(href)}" target="_blank" rel="noreferrer" class="flow-link">${I.ext} 원문</a>` : "";
     return flowItem("cite", "근거 확보", esc(head) + (d.quote ? " — “" + esc(d.quote) + "”" : "") + link);
   }
@@ -960,7 +970,7 @@ function discloseBody(steps, cits) {
   // citations: 법령 원문 링크(url 있으면), 없으면 law_name으로 law.go.kr
   const citRows = cits.map((c) => {
     const head = [c.law_name, c.article, c.title].filter(Boolean).join(" ") || srcKo(c.source);
-    const href = c.url || (c.law_name ? lawURL(c.law_name) : null);
+    const href = lawHref(c);
     const link = href ? `<a class="law-src" href="${esc(href)}" target="_blank" rel="noreferrer">${I.ext} 법령 원문 보기</a>` : "";
     const badge = c.extract_method ? `<span class="bsrc bsrc-${"law"}">${esc(srcKo(c.source))} · ${esc(c.extract_method)}</span>` : `<span class="bsrc bsrc-${"law"}">${esc(srcKo(c.source))}</span>`;
     return `<div class="law-item"><div class="law-name">${I_law}<span>${esc(head)}</span></div>${c.quote ? `<div class="law-plain">“${esc(c.quote)}”</div>` : ""}${badge}${link}</div>`;

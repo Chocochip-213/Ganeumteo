@@ -82,7 +82,12 @@ def config():
 
 
 # 정적 프론트(same-origin, CORS 불필요) — /diagnose/* 라우트 뒤에 마운트해 우선순위 유지
-app.mount("/", StaticFiles(directory=str(_FRONTEND), html=True), name="static")
+class _NoCacheStatic(StaticFiles):
+    async def get_response(self, path, scope):   # 프론트 파일 항상 no-store → 브라우저 stale 캐시 차단(근본: 강제리프레시해도 옛 chat.js 주던 문제)
+        resp = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+app.mount("/", _NoCacheStatic(directory=str(_FRONTEND), html=True), name="static")
 
 
 if __name__ == "__main__":
