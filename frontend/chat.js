@@ -1079,6 +1079,10 @@ function docStageCard(d, num, isUijae) {
     whenHtml = `<div class="ds-when ds-when-u"><span class="ds-when-lbl">언제</span><span class="ds-when-t">건축허가 시 함께 처리되는 인허가(의제)</span></div>`;
   }
 
+  // 작성주체: 에이전트가 법령근거(신청인/건축사§23/감리자§25)로 생성한 한 줄
+  const anote = String(d.author_note || "").trim();
+  const authorHtml = anote ? `<div class="ds-author"><span class="ds-author-lbl">작성</span><span class="ds-author-t">${esc(anote)}</span></div>` : "";
+
   return `<div class="doc-stage ${ok ? "" : "na"}">
     <div class="ds-head">
       ${isUijae ? `<div class="ds-num ds-num-u" title="건축허가에 함께 처리되는 의제(건축법 §11⑤)">의제</div>` : `<div class="ds-num">${num}</div>`}
@@ -1086,6 +1090,7 @@ function docStageCard(d, num, isUijae) {
       <span class="ds-badge ${ok ? "ok" : "na"}">${ok ? "법정 제출목록" : "확인필요"}</span>
     </div>
     ${whenHtml}
+    ${authorHtml}
     ${applyHtml ? `<div class="ds-apply-wrap">${applyHtml}</div>` : ""}
     ${ok && submitHtml ? `<div class="ds-items">${submitHtml}</div>` : ""}
     ${ok && checkHtml ? `<details class="ds-cond" open><summary>${I.cond}직접 확인 필요 · ${check.length}건</summary><div class="ds-items">${checkHtml}</div></details>` : ""}

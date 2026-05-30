@@ -360,10 +360,11 @@ def law_article_fetch(law_name: str, article: str, tool_call_id: Annotated[str, 
 
 # ── 서류·규모·작성주체 ───────────────────────────────────────
 @tool
-def docs_for_stage(stage_key: str, when_note: str = "", *, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+def docs_for_stage(stage_key: str, when_note: str = "", author_note: str = "", *, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """단계별 시행규칙 첨부서류 호 전수(누락0). docs_for(stage).
     입력 stage_key: '건축허가'·'착공신고'·'사용승인' + record_uijae로 만든 의제 stage_key(농지전용/산지전용/개발행위/초지전용/사도개설)만. 'PNU'·'의제단계' 등 placeholder 금지.
-    when_note: 이 단계를 '언제' 하는지 사용자에게 보일 한 줄(예 '공사 착수 직전 신고', '공사 완료 후 사용 전 신청'). 건축법 절차(허가→착공→사용승인) 근거로 네가 생성. 의제 단계면 '건축허가 시 함께 의제처리'. 모르면 빈 문자열(법 조문제목으로 대체)."""
+    when_note: 이 단계를 '언제' 하는지 사용자에게 보일 한 줄(예 '공사 착수 직전 신고', '공사 완료 후 사용 전 신청'). 건축법 절차(허가→착공→사용승인) 근거로 네가 생성. 의제 단계면 '건축허가 시 함께 의제처리'. 모르면 빈 문자열(법 조문제목으로 대체).
+    author_note: 이 단계 서류의 작성주체를 법령근거로 한 줄(예 '신청인 본인; 별표2 설계도서는 건축사 설계-건축법§23'·'감리완료보고서는 감리자-§25'). 법으로 판단(키워드 추측 금지). 모르면 빈 문자열."""
     r = DOC.docs_for(stage_key)
     if r["상태"] != "전수확보":
         return Command(update={"documents": [StageDocs(stage_key=stage_key, status="확인필요").model_dump()],
@@ -376,7 +377,7 @@ def docs_for_stage(stage_key: str, when_note: str = "", *, tool_call_id: Annotat
     af = r.get("신청서") or {}
     sd = StageDocs(stage_key=stage_key, law=r["법령"], article=r["조"], count=r["건수"],
                    when_note=when_note, when_law=r.get("when_law", ""), when_title=r.get("when_title", ""),
-                   when_quote=r.get("when_quote", ""),
+                   when_quote=r.get("when_quote", ""), author_note=author_note,
                    apply_title=af.get("제목", ""), apply_hwp=af.get("hwp", ""), apply_pdf=af.get("pdf", ""),
                    items=items).model_dump()
     # 조건부(해당시만 제출) 최상위 호만 추출 — 에이전트가 케이스로 판정하도록 ToolMessage에 노출(목은 부모 호에 포함)
