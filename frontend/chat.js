@@ -1,9 +1,10 @@
 // =========================================================
 //  가늠터 상담실 — 챗 엔진 (실 백엔드 와이어링)
 //  온보딩 → 지도모달(카카오 지오코더) → 주소 확정 → 채팅
-//  quickActions → 연면적·층수 입력 → /diagnose/stream(SSE live think-card)
-//  → interrupt→/resume → done → /diagnose/result → verdict-card + doc-cards
-//  정직: 실 SSE/result만. 모르는 kind/결측키도 크래시 없이(데이터주도).
+//  quickActions → 연면적·층수 입력 → /diagnose/stream(SSE)
+//  ChatGPT식: 채팅=질문→접힌 "검토 중"(1줄 subtle)→AI 답변 메시지(판정+요약+'자세히 보기').
+//  SSE trace(도구호출·사고·근거)는 채팅 숨김 → c.trace[]에 모아 우측 패널(상세 플로우+전체 분해).
+//  → interrupt→/resume → done → /diagnose/result. 모르는 kind/결측키도 크래시 없이(데이터주도).
 // =========================================================
 import { classifyVerdict, statusKo } from "./verdict.js";
 
@@ -308,7 +309,7 @@ function confirmMap() { if (!S.picked) return; const loc = { address: S.picked.a
 //  채팅방 생성 / 열기
 // ============================================================
 function createConvo(loc) {
-  const c = { loc, msgs: [], use_type: null, threadId: null, _new: true, started: false, stage: 0, ts: Date.now(), result: null };
+  const c = { loc, msgs: [], use_type: null, threadId: null, _new: true, started: false, stage: 0, ts: Date.now(), result: null, trace: [] };
   S.convos.unshift(c);
   openConvo(c);
   persist();
@@ -316,11 +317,13 @@ function createConvo(loc) {
 }
 function openConvo(c) {
   S.active = c;
+  closePanel();           // 상담 전환 시 패널 닫고(필요하면 결과 버튼으로 재오픈)
   $("#chead").classList.remove("hidden");
   $("#composerWrap").classList.remove("hidden");
   const L = c.loc;
   const sub = [L.zone, L.jimok].filter(Boolean);
   $("#chead").querySelector(".addr").innerHTML = `<div class="ac-ic">${I.pin}</div><div><div class="ac-t">${esc(L.address)}</div><div class="ac-s">${sub.length ? sub.map((x) => `<span>${esc(x)}</span>`).join('<span class="dotsep">·</span>') : '<span>입지·규제는 진단 중 조회돼요</span>'}</div></div>`;
+  updateHeadResultBtn(c);
   $("#cmpAddr").innerHTML = `${I.pin} ${esc(L.address)} 기준으로 상담 중`;
   const mt = $("#mbarTitle"); if (mt) mt.textContent = L.address;
   $("#mbarChange") && $("#mbarChange").classList.remove("hidden");
@@ -430,68 +433,93 @@ function beginDiagnose(area, floors) {
 }
 
 // ============================================================
-//  진단 스트림 (실 SSE → live think-card)
+//  진단 스트림 (실 SSE)
+//  ChatGPT식: 채팅엔 접힌 "검토 중…" 1개(현재 단계 1줄만 subtle 업데이트).
+//  도구호출·사고·근거 등 모든 trace 이벤트는 c.trace[]에 모아 우측 패널용으로만 사용.
 // ============================================================
 let _es = null;
+
+// SSE 이벤트 1건을 c.trace에 누적(채팅엔 렌더 안 함). 우측 '상세 플로우' 원천.
+function pushTrace(c, ev) {
+  if (!c) return;
+  if (!Array.isArray(c.trace)) c.trace = [];
+  c.trace.push({ kind: ev.kind, node: ev.node || null, label: ev.label || "", detail: ev.detail || null });
+}
+
+// 채팅의 접힌 "검토 중" 상태 버블 생성 → 핸들 반환(현재 1줄 갱신 / 답변으로 교체).
+function makeThinking() {
+  const wrap = el("div", "msg ai");
+  wrap.innerHTML = `<div class="av"></div><div class="col"><div class="who">가늠이</div>`
+    + `<div class="bubble thinking-bubble"><span class="think-spin"></span><span class="tb-t">🤔 검토 중…</span><span class="tb-step"></span></div></div>`;
+  msgs().appendChild(wrap); scrollBottom();
+  const stepEl = wrap.querySelector(".tb-step");
+  return {
+    wrap,
+    // 현재 단계 1줄만 subtle 교체(누적 나열 금지)
+    step(label) { if (label && stepEl) { stepEl.textContent = String(label); scrollBottom(); } },
+    // 멈춤 표시(에러/중단 시 — 답변 교체 전 잠깐)
+    stop(ok) {
+      const sp = wrap.querySelector(".think-spin"); if (sp) sp.remove();
+      const t = wrap.querySelector(".tb-t"); if (t) t.textContent = ok ? "검토를 마쳤어요" : "검토를 멈췄어요";
+    },
+    // 이 상태 버블을 제거(자리비움) — 그 자리에 답변 메시지가 들어감
+    remove() { wrap.remove(); },
+  };
+}
+
+// SSE 한 이벤트 처리(stream/resume 공용): trace 누적 + 채팅 1줄 갱신. true=종료처리됨.
+function handleTraceEvent(c, ev, think) {
+  const k = ev && ev.kind;
+  if (!k) return false;
+  if (k === "meta") { if (ev.detail && ev.detail.thread_id) c.threadId = ev.detail.thread_id; pushTrace(c, ev); think.step("접수 중…"); return false; }
+  if (k === "thinking" || k === "tool_call" || k === "tool_result" || k === "citation" || k === "node_done" || k === "verdict" || k === "abstain" || k === "error") {
+    pushTrace(c, ev);
+    // 채팅엔 현재 단계 1줄만(도구 라벨/사고 머리말) — 20줄 나열 금지
+    if (k === "tool_result") { if (ev.detail && ev.detail.found === false) think.step((ev.label || "결과") + " — 확인필요"); }
+    else if (k === "thinking") { think.step("🤔 " + _q(ev.detail && ev.detail.text, 40)); }
+    else if (k === "error") { think.step("⚠️ " + (ev.label || "오류")); }
+    else think.step(ev.label || k);
+    return false;
+  }
+  return false; // interrupt/done은 호출부에서 처리
+}
+function _q(s, n) { s = String(s == null ? "" : s).replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n) + "…" : s; }
+
 function runDiagnoseStream(url) {
   const c = S.active;
   if (_es) { try { _es.close(); } catch (e) {} _es = null; }
-  // live think-card 생성
-  const wrap = el("div", "msg ai"); wrap.innerHTML = `<div class="av"></div><div class="col"><div class="who">가늠이</div></div>`;
-  const card = el("div", "card think-card");
-  card.innerHTML = `<div class="think-h"><span class="think-spin"></span><span class="th-t">인허가 조건을 검토하고 있어요</span><span class="th-state">분석 중</span></div><div class="think-steps" id="thinkSteps"></div>`;
-  wrap.querySelector(".col").appendChild(card); msgs().appendChild(wrap); scrollBottom();
-  const stepsBox = card.querySelector("#thinkSteps");
-  stepsBox.removeAttribute("id");
-  const seen = new Set();
-  const addStep = (label, dim) => {
-    if (!label) return;
-    const key = String(label);
-    if (seen.has(key)) return;
-    seen.add(key);
-    const s = el("div", "think-step on" + (dim ? " dim" : ""), `<span class="tk">${I.check}</span>${esc(label)}`);
-    stepsBox.appendChild(s); scrollBottom();
-  };
-  const finishCard = (ok) => {
-    const spin = card.querySelector(".think-spin"); if (spin) spin.classList.add("hide");
-    card.querySelector(".th-t").textContent = ok ? "검토를 마쳤어요" : "검토를 멈췄어요";
-    const st = card.querySelector(".th-state"); st.textContent = ok ? "확인 완료" : "중단"; st.classList.add("done");
-  };
+  c.trace = [];          // 재진단 시 이전 플로우 비움
+  c.result = null;
+  const think = makeThinking();
+  c._think = think;
 
   const es = new EventSource(url); _es = es;
   es.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
     const k = ev && ev.kind;
     if (!k) return;
-    if (k === "meta") { if (ev.detail && ev.detail.thread_id) c.threadId = ev.detail.thread_id; addStep("📋 접수: " + (ev.detail && ev.detail.address || c.loc.address)); return; }
-    if (k === "tool_call") { addStep(ev.label || (ev.detail && ev.detail.tool)); return; }
-    if (k === "tool_result") { if (ev.detail && ev.detail.found === false) addStep("⚠ " + (ev.label || "결과") + " — 확인필요", true); return; }
-    if (k === "citation") { const d = ev.detail || {}; addStep("🔖 근거 확보 " + [d.law_name, d.article].filter(Boolean).join(" "), true); return; }
-    if (k === "node_done") { addStep(ev.label); return; }
-    if (k === "verdict") { addStep(ev.label || "🧩 1차 판정 도출"); return; }
-    if (k === "abstain") { addStep(ev.label || "⏸ 자동판정 보류", true); return; }
-    if (k === "error") { addStep("⚠️ " + (ev.label || "오류"), true); return; }
-    if (k === "interrupt") { try { es.close(); } catch (_) {} _es = null; showInterrupt(ev.detail, card, stepsBox); return; }
-    if (k === "done") { try { es.close(); } catch (_) {} _es = null; finishCard(true); fetchResult(c); return; }
-    // 모르는 kind → 무시
+    if (k === "interrupt") { try { es.close(); } catch (_) {} _es = null; showInterrupt(ev.detail, think); return; }
+    if (k === "done") { try { es.close(); } catch (_) {} _es = null; pushTrace(c, ev); fetchResult(c, think); return; }
+    handleTraceEvent(c, ev, think);
   };
   es.onerror = () => {
     if (_es) { try { _es.close(); } catch (_) {} _es = null; }
-    finishCard(false);
     // 결과가 이미 받아졌으면 표시, 아니면 안내
-    if (c.threadId) fetchResult(c);
-    else aiSay("진단 연결이 끊어졌어요. 잠시 후 ‘주소 변경’으로 다시 시도하거나 입력을 확인해 주세요.", 400);
+    if (c.threadId) fetchResult(c, think);
+    else { think.remove(); aiSay("진단 연결이 끊어졌어요. 잠시 후 ‘주소 변경’으로 다시 시도하거나 입력을 확인해 주세요.", 400); }
   };
 }
 
-// 인터럽트(HITL) — fields 인라인 입력 → /diagnose/resume
-function showInterrupt(detail, card, stepsBox) {
+// 인터럽트(HITL) — fields 인라인 입력 → /diagnose/resume.
+// 접힌 검토버블은 그대로 두고(자리 유지), 입력폼만 별도 AI 노드로 노출(대화 인터랙션).
+function showInterrupt(detail, think) {
   const c = S.active;
   detail = detail || {};
   const fields = arr(detail.fields).length ? detail.fields : ["floor_area", "floor_count"];
   const labels = { floor_area: "연면적(㎡)", floor_count: "층수", use_type: "용도" };
   const types = { floor_area: "number", floor_count: "number", use_type: "text" };
-  addInterruptStep(stepsBox, "✋ 추가 입력이 필요해요");
+  pushTrace(c, { kind: "interrupt", node: null, label: "✋ 사용자 입력 필요", detail });
+  if (think) think.step("✋ 추가 입력이 필요해요");
   const box = el("div", "msg ai");
   box.innerHTML = `<div class="av"></div><div class="col"><div class="who">가늠이</div></div>`;
   const form = el("div", "card card-pad scale-form", "");
@@ -511,84 +539,263 @@ function showInterrupt(detail, card, stepsBox) {
     const sum = $$("input[data-f]", form).map((i) => i.value ? `${labels[i.dataset.f] || i.dataset.f} ${i.value}` : null).filter(Boolean).join(" · ");
     box.remove();
     if (sum) pushUser(sum);
-    resumeStream("/diagnose/resume?" + qs.toString(), card, stepsBox);
+    resumeStream("/diagnose/resume?" + qs.toString(), think);
   };
   $("#intReject", form).onclick = () => {
     box.remove();
     pushUser("진단을 중단할게요");
-    resumeStream("/diagnose/resume?" + new URLSearchParams({ thread_id: c.threadId, reject: "true" }).toString(), card, stepsBox);
+    resumeStream("/diagnose/resume?" + new URLSearchParams({ thread_id: c.threadId, reject: "true" }).toString(), think);
   };
-}
-function addInterruptStep(stepsBox, label) {
-  const s = el("div", "think-step on", `<span class="tk">${I.bang}</span>${esc(label)}`);
-  stepsBox.appendChild(s); scrollBottom();
 }
 
-// resume도 같은 think-card에 step을 이어 붙임
-function resumeStream(url, card, stepsBox) {
+// resume도 같은 검토버블에 이어붙임(trace 누적 + 1줄 갱신).
+function resumeStream(url, think) {
   const c = S.active;
   if (_es) { try { _es.close(); } catch (e) {} _es = null; }
-  const spin = card.querySelector(".think-spin"); if (spin) spin.classList.remove("hide");
-  const st = card.querySelector(".th-state"); st.textContent = "분석 중"; st.classList.remove("done");
-  const seen = new Set([...stepsBox.children].map((n) => n.textContent));
-  const addStep = (label, dim) => {
-    if (!label) return; const key = String(label); if (seen.has(key)) return; seen.add(key);
-    const s = el("div", "think-step on" + (dim ? " dim" : ""), `<span class="tk">${I.check}</span>${esc(label)}`);
-    stepsBox.appendChild(s); scrollBottom();
-  };
-  const finishCard = (ok) => {
-    const sp = card.querySelector(".think-spin"); if (sp) sp.classList.add("hide");
-    card.querySelector(".th-t").textContent = ok ? "검토를 마쳤어요" : "검토를 멈췄어요";
-    const s2 = card.querySelector(".th-state"); s2.textContent = ok ? "확인 완료" : "중단"; s2.classList.add("done");
-  };
+  if (!think || !think.wrap || !think.wrap.isConnected) think = c._think = makeThinking();
   const es = new EventSource(url); _es = es;
   es.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
     const k = ev && ev.kind; if (!k) return;
-    if (k === "tool_call") return addStep(ev.label || (ev.detail && ev.detail.tool));
-    if (k === "tool_result") { if (ev.detail && ev.detail.found === false) addStep("⚠ " + (ev.label || "결과") + " — 확인필요", true); return; }
-    if (k === "citation") { const d = ev.detail || {}; return addStep("🔖 근거 확보 " + [d.law_name, d.article].filter(Boolean).join(" "), true); }
-    if (k === "node_done") return addStep(ev.label);
-    if (k === "verdict") return addStep(ev.label || "🧩 1차 판정 도출");
-    if (k === "abstain") return addStep(ev.label || "⏸ 자동판정 보류", true);
-    if (k === "error") return addStep("⚠️ " + (ev.label || "오류"), true);
-    if (k === "interrupt") { try { es.close(); } catch (_) {} _es = null; return showInterrupt(ev.detail, card, stepsBox); }
-    if (k === "done") { try { es.close(); } catch (_) {} _es = null; finishCard(true); return fetchResult(c); }
+    if (k === "interrupt") { try { es.close(); } catch (_) {} _es = null; return showInterrupt(ev.detail, think); }
+    if (k === "done") { try { es.close(); } catch (_) {} _es = null; pushTrace(c, ev); return fetchResult(c, think); }
+    handleTraceEvent(c, ev, think);
   };
-  es.onerror = () => { if (_es) { try { _es.close(); } catch (_) {} _es = null; } finishCard(true); fetchResult(c); };
+  es.onerror = () => { if (_es) { try { _es.close(); } catch (_) {} _es = null; } fetchResult(c, think); };
 }
 
 // ============================================================
 //  결과 fetch → verdict-card + doc-cards
 // ============================================================
-async function fetchResult(c) {
-  if (!c || !c.threadId) return;
+async function fetchResult(c, think) {
+  if (!c || !c.threadId) { if (think) think.remove(); return; }
   let j;
   try {
     const r = await fetch("/diagnose/result?thread_id=" + encodeURIComponent(c.threadId));
     j = await r.json();
-  } catch (e) { await aiSay("결과를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.", 400); return; }
+  } catch (e) { if (think) think.remove(); await aiSay("결과를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.", 400); return; }
   c.result = j;
   // 입지 메타를 상담 loc에 반영(사이드바·헤더 갱신)
   if (j.zone) c.loc.zone = j.zone;
   if (j.jimok) c.loc.jimok = j.jimok;
   persist();
+  updateHeadResultBtn(c);   // 헤더 '결과 보기' 노출
   // 헤더 서브라인 갱신
   const sub = [c.loc.zone, c.loc.jimok].filter(Boolean);
   const acs = $("#chead .ac-s"); if (acs && sub.length) acs.innerHTML = sub.map((x) => `<span>${esc(x)}</span>`).join('<span class="dotsep">·</span>');
 
-  await wait(250);
+  setStage(3);
+  // 접힌 검토버블을 제거 → 그 자리에 AI 답변 메시지(한 줄 판정 + 대화체 요약 + '자세히 보기' 1개)
+  if (think) think.remove();
+  await wait(180);
+  pushAINode(answerMessage(c));
+  renderPanel(c);          // 우측 패널 채우고
+  openPanel();             // 진단 직후 자동 1회 open
+}
+
+// verdict tone → 한 줄 판정 표현(과적합 아님, classifyVerdict 결과만 사용)
+function verdictTail(cls) {
+  if (cls.tone === "affirmative") return "이에요";
+  if (cls.tone === "conditional") return " — 조건을 갖추면 가능해요";
+  if (cls.tone === "danger") return " — 신중히 검토해야 해요";
+  return " — 직접 확인이 필요한 항목이 있어요";
+}
+
+// 진단 done → 채팅 'AI 답변 메시지': 판정 한 줄 + 대화체 2~3줄 요약(legal_reasoning) + '자세히 보기' 1개.
+// 카드 전체 덤프 금지(전체 분해는 우측 패널).
+function answerMessage(c) {
+  const env = (c.result && c.result._return) || {};
+  const card = env.card || {};
+  const cls = classifyVerdict(card.verdict);
+  const level = cls.tone === "affirmative" ? "go" : (cls.tone === "conditional" || cls.tone === "danger") ? "cond" : "check";
+  const what = c.use_type ? esc(c.use_type) : "이 건축 행위";
+  // 판정 한 줄: "이 땅에 카페는 조건부 가능이에요"
+  const headline = `이 땅에 <b>${what}</b>는 <b>${esc(cls.label)}</b>${verdictTail(cls)}`;
+  // 대화체 요약 2~3줄: legal_reasoning에서 핵심 근거 1~2 + 다음 할 일 1
+  const lines = answerSummaryLines(card, env, c.result);
+  const body = lines.map((t) => `<div class="am-line">${t}</div>`).join("");
+  return `<div class="answer-msg ${level}" data-role="answer">
+    <div class="am-head"><span class="am-sig">${level === "go" ? I.go : level === "cond" ? I.cond : I.info}</span><span class="am-verdict">${headline}</span></div>
+    ${body ? `<div class="am-body">${body}</div>` : ""}
+    <button class="am-open" data-act="openpanel">${I.list} 자세히 보기</button>
+  </div>`;
+}
+
+// 대화체 요약 줄(2~3): 근거(verdict_basis_seq 우선 → 확정 step) + 확인필요/다음 할 일.
+function answerSummaryLines(card, env, full) {
+  const lr = card.legal_reasoning || {};
+  const steps = arr(lr.steps);
+  const out = [];
+  // 1) 핵심 근거 1~2줄
+  const basisSeq = arr(lr.verdict_basis_seq);
+  const bySeq = (n) => steps.find((s) => s.seq === n);
+  let picks = basisSeq.map(bySeq).filter(Boolean);
+  if (!picks.length) picks = steps.filter((s) => s.status === "확정").slice(0, 2);
+  picks.slice(0, 2).forEach((s) => {
+    const txt = [s.fact, s.infer].filter(Boolean).join(" → ");
+    if (txt) out.push(`${maybeTerm(s.kind || "근거")} 기준 ${esc(txt)}`);
+    else if (s.kind) out.push(`${maybeTerm(s.kind)} 항목을 확인했어요.`);
+  });
+  // 보류형(한글키) — legal_reasoning 없을 때 사유 한 줄
+  if (!out.length && card["사유"]) {
+    const r = Array.isArray(card["사유"]) ? card["사유"].map((x) => x["사유"] || x).join(" / ") : card["사유"];
+    out.push(esc(r));
+  }
+  // 2) 다음 할 일/유의 1줄
+  const needs = steps.filter((s) => s.status === "확인필요").length;
+  const stages = arr(card.documents).map((d) => d.stage || d.stage_key).filter(Boolean);
+  if (needs) out.push(`다만 ${needs}개 항목은 자동 조회가 안 돼 <b>직접 확인</b>이 필요해요.`);
+  if (stages.length) out.push(`제출 단계는 <b>${esc(stages.join(" → "))}</b> 순이에요. 자세한 서류·근거는 ‘자세히 보기’에서요.`);
+  else out.push(`자세한 근거·서류·규모·부담금은 ‘자세히 보기’에서 확인하세요.`);
+  return out.slice(0, 3);
+}
+
+// ============================================================
+//  우측 결과 패널 (ChatGPT 캔버스식)
+// ============================================================
+function openPanel() {
+  const p = $("#resultPanel"), b = $("#rpBackdrop");
+  if (!p) return;
+  p.classList.add("open"); p.setAttribute("aria-hidden", "false");
+  if (b) b.classList.add("show");
+}
+function closePanel() {
+  const p = $("#resultPanel"), b = $("#rpBackdrop");
+  if (!p) return;
+  p.classList.remove("open"); p.setAttribute("aria-hidden", "true");
+  if (b) b.classList.remove("show");
+}
+// 헤더에 '결과 보기' 버튼 — result 있을 때만 노출(재오픈용)
+function updateHeadResultBtn(c) {
+  const head = $("#chead"); if (!head) return;
+  let btn = head.querySelector("#headResult");
+  const has = !!(c && c.result);
+  if (!has) { if (btn) btn.remove(); return; }
+  if (!btn) {
+    btn = el("button", "change");
+    btn.id = "headResult";
+    btn.innerHTML = `${I.list} 결과 보기`;
+    btn.onclick = () => { if (S.active) { renderPanel(S.active); openPanel(); } };
+    const change = head.querySelector("#changeAddr");
+    if (change) head.insertBefore(btn, change); else head.appendChild(btn);
+  }
+}
+
+// 주어진 상담의 result를 패널에 렌더(결과 없으면 안내)
+function renderPanel(c) {
+  const body = $("#rpBody"); if (!body) return;
+  const L = (c && c.loc) || {};
+  const ic = $("#rpIcon"), tt = $("#rpTitle"), ss = $("#rpSub");
+  if (ic) ic.innerHTML = I.pin;
+  if (tt) tt.textContent = "진단 결과";
+  if (ss) ss.textContent = L.address || "";
+  if (!c || !c.result) {
+    body.innerHTML = `<div class="card card-pad"><p style="font-size:14px;color:var(--fg-3);margin:0;line-height:1.6">${I.info} 이 상담은 진단 결과가 아직 없어요. 채팅에서 건축 행위와 규모를 입력하면 결과가 여기에 표시돼요.</p></div>`;
+    return;
+  }
+  const j = c.result;
   const env = j._return || {};
   const card = env.card || {};
   const cits = arr(j.citations);
-  await aiSay(`진단 결과가 나왔어요. 아래 카드에서 <b>가능 여부와 근거</b>를 확인하세요.`, 500);
-  pushAINode(verdictCard(env, card, cits, j));
-  await wait(350);
-  setStage(3);
-  await aiSay(`이 진단을 바탕으로 <b>준비하셔야 할 서류</b>를 단계별로 정리했어요. 각 서류는 발급처와 공식 링크를 함께 안내해요.`, 600);
-  pushAINode(docCards(card));
-  await wait(250);
-  await aiSay(`이 주소 기준으로 더 궁금한 점이 있으면 아래에 물어보세요. 예) “용적률이 뭐야?”, “세움터 어디로 들어가?”`, 500);
+  body.innerHTML =
+    `<div class="rp-sec-h">${I.route} 상세 추론 과정</div>` +
+    flowSection(c) +
+    `<div class="rp-sec-h">${I.sparkle} AI 사전 진단</div>` +
+    verdictCard(env, card, cits, j) +
+    envelopeCard(card) +
+    leviesCard(card) +
+    parkingCard(card) +
+    `<div class="rp-sec-h">${I.list} 단계별 제출 서류</div>` +
+    docCards(card);
+  wireDynamic();
+  wireTerms();
+  body.scrollTop = 0;
+}
+
+// ── 우측 '상세 추론 과정': c.trace[] step들을 시간순으로(도구호출·결과·🤔사고·근거·판정) ──
+function flowSection(c) {
+  const tr = arr(c && c.trace);
+  if (!tr.length) return `<div class="card card-pad"><p style="font-size:13.5px;color:var(--fg-3);margin:0;line-height:1.6">${I.info} 이 진단의 추론 과정 기록이 없어요. (이전 기록이거나 재진단이 필요해요.)</p></div>`;
+  const rows = tr.map((ev) => flowRow(ev)).filter(Boolean).join("");
+  return `<div class="flow-list">${rows}</div>`;
+}
+function flowRow(ev) {
+  const k = ev.kind, d = ev.detail || {};
+  if (k === "meta") {
+    return flowItem("dot", "📋 접수", esc((d.address || "") + (d.use_type ? " · " + d.use_type : "")));
+  }
+  if (k === "thinking") {
+    return flowItem("think", "🤔 가늠이의 판단", esc(d.text || ""));
+  }
+  if (k === "tool_call") {
+    const args = d.args && Object.keys(d.args).length ? Object.entries(d.args).map(([kk, vv]) => `${esc(kk)}: ${esc(String(vv))}`).join(" · ") : "";
+    return flowItem("call", esc(ev.label || ("🔧 " + (d.tool || "도구"))), args);
+  }
+  if (k === "tool_result") {
+    const ok = d.found !== false;
+    return flowItem(ok ? "ok" : "na", esc(ev.label || "🔧 결과") + (ok ? "" : " — 확인필요"), d.quote ? "“" + esc(d.quote) + "”" : (ok ? "결과 확보" : "자동 조회 안 됨"));
+  }
+  if (k === "citation") {
+    const head = [d.law_name, d.article, d.title].filter(Boolean).join(" ") || (d.source || "근거");
+    const href = d.url || (d.law_name ? lawURL(d.law_name) : null);
+    const link = href ? ` <a href="${esc(href)}" target="_blank" rel="noreferrer" class="flow-link">${I.ext} 원문</a>` : "";
+    return flowItem("cite", "🔖 근거 확보", esc(head) + (d.quote ? " — “" + esc(d.quote) + "”" : "") + link);
+  }
+  if (k === "node_done") return flowItem("done", esc(ev.label || "단계 완료"), "");
+  if (k === "verdict") return flowItem("verdict", esc(ev.label || "🧩 1차 판정 도출"), d.verdict ? "판정: " + esc(d.verdict) : "");
+  if (k === "abstain") return flowItem("na", esc(ev.label || "⏸ 자동판정 보류"), "");
+  if (k === "interrupt") return flowItem("na", esc(ev.label || "✋ 사용자 입력 필요"), esc((d && d.question) || ""));
+  if (k === "error") return flowItem("na", esc(ev.label || "⚠️ 오류"), "");
+  if (k === "done") return flowItem("ok", esc(ev.label || "🏁 진단 완료"), d.terminal_reason ? esc(statusKo(d.terminal_reason)) : "");
+  return "";
+}
+function flowItem(type, title, detail) {
+  return `<div class="flow-item ${esc(type)}"><div class="fi-rail"><span class="fi-dot"></span></div>`
+    + `<div class="fi-main"><div class="fi-t">${title}</div>${detail ? `<div class="fi-d">${detail}</div>` : ""}</div></div>`;
+}
+
+// ── 규모(envelope): scale_limits 신규 필드 — 없으면 graceful skip ──
+function envelopeCard(card) {
+  const sl = card.scale_limits || {};
+  const rows = [];
+  if (sl.max_building_area != null) rows.push(["최대 건축면적", esc(sl.max_building_area) + "㎡"]);
+  if (sl.max_floor_area != null) rows.push(["최대 연면적", esc(sl.max_floor_area) + "㎡"]);
+  if (sl.approx_floors != null) rows.push(["대략 층수", "약 " + esc(sl.approx_floors) + "층"]);
+  const notes = [];
+  if (sl.envelope_note) notes.push(esc(sl.envelope_note));
+  if (sl.energy_saving_required) notes.push(maybeTerm("에너지절약계획서") + " 제출 대상이에요.");
+  if (sl.structural_safety_required) notes.push(maybeTerm("구조안전확인서") + " 확인 대상이에요.");
+  if (!rows.length && !notes.length) return "";
+  return `<div class="card card-pad mini-card">
+    <div class="card-h" style="padding:0 0 6px">${I.home} 지을 수 있는 규모</div>
+    ${rows.length ? `<div class="kv-grid" style="padding:2px 0 ${notes.length ? "10px" : "0"}">${rows.map(([k, v]) => `<div class="kv-cell"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`).join("")}</div>` : ""}
+    ${notes.map((n) => `<div class="mini-note">${I.info}<span>${n}</span></div>`).join("")}
+  </div>`;
+}
+
+// ── 부담금(levies): 신규·있을 수 있음 — 산식 + amount(있으면 금액, 없으면 확인필요) ──
+function leviesCard(card) {
+  const lv = arr(card.levies);
+  if (!lv.length) return "";
+  const rows = lv.map((l) => {
+    const has = l.amount != null && l.amount !== "";
+    const amt = has ? `<span class="lv-amt">${esc(typeof l.amount === "number" ? l.amount.toLocaleString() : l.amount)}원</span>` : `<span class="lv-amt na">확인 필요</span>`;
+    const meta = [l.formula ? "산식 " + esc(l.formula) : "", l.note ? esc(l.note) : ""].filter(Boolean).join(" · ");
+    return `<div class="lv-row"><div class="lv-main"><div class="lv-t">${esc(l.levy_type || "부담금")}</div>${meta ? `<div class="lv-m">${meta}</div>` : ""}</div>${amt}</div>`;
+  }).join("");
+  return `<div class="card card-pad mini-card"><div class="card-h" style="padding:0 0 8px">${I.info} 예상 부담금</div>${rows}</div>`;
+}
+
+// ── 주차(parking_req): 신규·있을 수 있음 ──
+function parkingCard(card) {
+  const p = card.parking_req;
+  if (!p || typeof p !== "object" || !Object.keys(p).length) return "";
+  const rows = Object.entries(p).map(([k, v]) => {
+    if (v == null || v === "" || typeof v === "object") return "";
+    return `<div class="kv-cell"><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`;
+  }).filter(Boolean).join("");
+  if (!rows) return "";
+  return `<div class="card card-pad mini-card"><div class="card-h" style="padding:0 0 6px">🅿 주차 기준</div><div class="kv-grid" style="padding:2px 0 0">${rows}</div></div>`;
 }
 
 // ── verdict-card (level: classifyVerdict.tone → go/cond/check) ──
@@ -621,7 +828,7 @@ function verdictCard(env, card, cits, full) {
 
   // risk-list: abstentions + 확인필요 step + scale_limits.notes
   const risks = [];
-  steps.filter((s) => s.status === "확인필요").forEach((s) => risks.push([`'${s.kind || "단계"}' 근거 미확보 → 확인필요`, esc(s.infer || s.leads || "담당 부서·건축사 확인이 필요해요."), "mid"]));
+  steps.filter((s) => s.status === "확인필요").forEach((s) => risks.push([`'${s.kind || "단계"}' 자동 조회 안 됨 → 직접 확인 필요`, esc(s.infer || s.leads || "이 항목은 자동으로 확인되지 않았어요. 관할 부서·건축사에게 확인하세요."), "mid"]));
   const sl = card.scale_limits || {};
   arr(sl.notes).forEach((n) => risks.push(["규모 기준", esc(n), "low"]));
   if (sl.energy_saving_required) risks.push([maybeTerm("에너지절약계획서") + " 대상", "연면적 기준을 넘어 에너지절약계획서 제출이 필요해요.", "mid"]);
@@ -666,7 +873,7 @@ function bodySummary(card, lr, steps, env) {
   }
   const needs = steps.filter((s) => s.status === "확인필요");
   if (needs.length) {
-    return "자동으로 확정하지 못한 항목이 있어 <b>확인필요</b>로 판정했어요.<br>" + needs.map((s) => `${esc(s.kind || "단계")}: ${esc(s.infer || s.leads || "추가 확인 필요")}`).join("<br>");
+    return "일부 항목이 <b>자동으로 조회되지 않아</b> ‘확인필요’로 판정했어요. 아래 항목은 발급처·관할에서 직접 확인하세요.<br>" + needs.map((s) => `${esc(s.kind || "단계")}: ${esc(s.infer || s.leads || "직접 확인 필요")}`).join("<br>");
   }
   if (steps.length) return steps.map((s) => `<b>${esc(s.kind)}</b> ${esc(s.fact || "")}`).join("<br>");
   // 보류형 한글키
@@ -703,7 +910,7 @@ function discloseBody(steps, cits) {
   const stepRows = steps.map((s) => {
     const b = s.basis;
     const cls = !b ? "none" : (b === "vworld" ? "site" : "law");
-    const tag = !b ? "근거 미확보 → 확인필요" : (b === "vworld" ? "입지 출처(법적 근거 아님)" : "법적 근거: " + esc(b));
+    const tag = !b ? "자동 조회 안 됨 → 직접 확인 필요" : (b === "vworld" ? "입지 출처(법적 근거 아님)" : "법적 근거: " + esc(b));
     return `<div class="basis-item"><div class="bc">${!b ? I.bang : I.check}</div><div><div class="bt">${esc(s.kind || "단계")}</div><div class="bd">${esc(s.fact || "")}${s.infer ? " — " + esc(s.infer) : ""}</div><span class="bsrc bsrc-${cls}">${tag}</span></div></div>`;
   }).join("");
   // citations: 법령 원문 링크(url 있으면), 없으면 law_name으로 law.go.kr
@@ -724,36 +931,82 @@ function abstainBlock(card) {
   return `<div class="kv-grid">${rows}</div>`;
 }
 
-// ── doc-cards (documents[] → docx) ──
-function docCards(card) {
+// ── 서류 단계 카드 (documents[] → 절차순 + 호별 체크리스트, 목은 들여쓰기) ──
+// 목(가/나/다…) 판별: ho에 한글 목문자(가–하 단음절)가 들어가면 목. '1.'·'2.'·'1의2.'엔 없음.
+const MOK_RE = /[가나다라마바사아자차카타파하]/;
+function isMok(ho) { return MOK_RE.test(String(ho || "")); }
+
+// 제출처 포털 — stage 키워드 기반(가짜 URL 날조 아님, 공식 포털만)
+function submitPortal(stage) {
+  if (/농지/.test(stage)) return ["정부24(농지전용)", "https://www.gov.kr"];
+  return ["세움터(건축행정시스템)", "https://www.eais.go.kr"];
+}
+
+// 절차순 정렬: 건축허가 → (의제) → 착공신고 → 사용승인.
+// 의제 단계는 card.uijae[].stage_key로 식별(특정 zone/주소 하드코딩 아님).
+function orderedDocs(card) {
   const docs = arr(card.documents);
-  if (!docs.length) return `<div class="card card-pad"><div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 필요 서류</span></div><p style="font-size:14px;color:var(--fg-3);margin:6px 0 0">서류 단계가 산출되지 않았어요. 관할 기관에 직접 문의가 필요해요.</p></div>`;
-  // 발급처/링크: stage_key 기반 공식 포털 안내 (가짜 서류명 금지 — 단계+건수만)
-  const portal = (stage) => {
-    if (/농지/.test(stage)) return ["정부24 · 농지민원", "https://www.gov.kr"];
-    if (/사용승인|착공|건축/.test(stage)) return ["세움터(건축행정시스템)", "https://www.eais.go.kr"];
-    return ["세움터(건축행정시스템)", "https://www.eais.go.kr"];
+  const uijaeKeys = new Set(arr(card.uijae).map((u) => u && u.stage_key).filter(Boolean));
+  const rank = (d) => {
+    const s = String(d.stage || d.stage_key || "");
+    if (/건축\s*허가|건축허가/.test(s)) return 0;
+    if (uijaeKeys.has(s)) return 1;            // 의제(농지전용/산지전용/개발행위 등)
+    if (/착공/.test(s)) return 2;
+    if (/사용\s*승인|사용승인/.test(s)) return 3;
+    return 1.5;                                 // 미분류(혹시 모를 단계) → 의제 뒤
   };
-  return `<div class="card card-pad">
-    <div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 단계별 필요 서류 ${docs.length}단계</span></div>
-    ${docs.map((d) => {
-      const stage = d.stage || d.stage_key || "단계";
-      const ok = d.status === "전수확보";
-      const [where, link] = portal(stage);
-      const why = ok ? `${d.count != null ? d.count + "개 " : ""}서류 · 전수확보` : "자동확인 실패 → 확인필요";
-      return `<div class="docx">
-        <div class="docx-top">
-          <div class="dn">${I.file}</div>
-          <div class="dmain"><div class="dt">${esc(stage)}</div><div class="dwhy">${esc(why)}</div></div>
-          <div class="dbadges"><span class="dbadge ${ok ? "req" : "opt"}">${ok ? "필수" : "확인필요"}</span></div>
-        </div>
-        <div class="docx-where">${I.pin}<span>발급·접수처 <b>${esc(where)}</b></span></div>
-        <div class="docx-actions">
-          <a class="dlink" href="${esc(link)}" target="_blank" rel="noreferrer">${I.ext} ${esc(where)} 바로가기</a>
-        </div>
-      </div>`;
-    }).join("")}
-    <div class="docx-note" style="font-size:12.5px;color:var(--fg-3);margin-top:12px;line-height:1.5">${I.info} 각 단계의 세부 서류 목록은 발급처에서 확인하세요. ‘확인필요’ 단계는 자동 조회가 되지 않아 직접 확인이 필요해요.</div>
+  return docs.map((d, i) => [d, i]).sort((a, b) => (rank(a[0]) - rank(b[0])) || (a[1] - b[1])).map((x) => x[0]);
+}
+
+function docCards(card) {
+  const docs = orderedDocs(card);
+  if (!docs.length) return `<div class="card card-pad"><div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 제출 서류</span></div><p style="font-size:14px;color:var(--fg-3);margin:6px 0 0">서류 단계가 산출되지 않았어요. 관할 기관(해당 시·군·구청 건축과)에 직접 문의가 필요해요.</p></div>`;
+  return docs.map((d, i) => docStageCard(d, i + 1)).join("");
+}
+
+function docStageCard(d, num) {
+  const stage = d.stage || d.stage_key || "단계";
+  const ok = d.status === "전수확보";
+  const law = d.law || "", article = d.article || "";
+  // 호별 그룹화: 최상위 호 = 제출서류, 목 = 직전 호의 하위 조건
+  const items = arr(d.items);
+  const groups = [];
+  items.forEach((it) => {
+    if (isMok(it.ho) && groups.length) { groups[groups.length - 1].moks.push(it); }
+    else { groups.push({ head: it, moks: [] }); }
+  });
+
+  const itemsHtml = groups.map((g) => {
+    const h = g.head || {};
+    const name = String(h.doc_name || "").trim();
+    const proviso = h.has_proviso ? `<span class="ds-proviso">${I.bang} 단서 있음</span>` : "";
+    const mokHtml = g.moks.map((m) => {
+      const mp = m.has_proviso ? `<span class="ds-proviso">${I.bang} 단서</span>` : "";
+      return `<div class="ds-mok"><span class="mbar"></span><span class="dtxt">${esc(String(m.doc_name || "").trim())}${mp}</span></div>`;
+    }).join("");
+    return `<div class="ds-doc"><span class="dchk">${I.check}</span><span class="dtxt">${esc(name) || "(서류명 없음)"}${proviso}</span></div>${mokHtml}`;
+  }).join("");
+
+  // 링크: 시행규칙 별지서식(law.go.kr) + 제출처 포털
+  const lawLink = law ? `<a class="ds-link" href="${esc(lawURL(law))}" target="_blank" rel="noreferrer">${I.ext} 별지서식·시행규칙 보기</a>` : "";
+  const [where, purl] = submitPortal(stage);
+  const submitLink = `<a class="ds-link" href="${esc(purl)}" target="_blank" rel="noreferrer">${I.pin} ${esc(where)} 제출</a>`;
+
+  // 부제: 법령 + 조 + (확보된 경우) 서류 수 — '개수'는 보조표시만, 본문은 실서류 목록
+  const lawLine = [law, article].filter(Boolean).join(" ");
+  const sub = ok
+    ? `${esc(lawLine)}${lawLine ? " · " : ""}제출서류 ${groups.length}건`
+    : `${esc(lawLine || "시행규칙")} · 자동 조회 안 됨`;
+
+  return `<div class="doc-stage ${ok ? "" : "na"}">
+    <div class="ds-head">
+      <div class="ds-num">${num}</div>
+      <div class="ds-main"><div class="ds-t">${esc(stage)}</div><div class="ds-law">${sub}</div></div>
+      <span class="ds-badge ${ok ? "ok" : "na"}">${ok ? "서류 확보" : "확인필요"}</span>
+    </div>
+    ${ok && itemsHtml ? `<div class="ds-items">${itemsHtml}</div>` : ""}
+    ${!ok ? `<div class="ds-na-note">${I.bang}<span>이 단계 서류는 자동 조회가 되지 않았어요. 발급처(${esc(where)})에서 직접 확인하세요. <b>서류가 없다는 뜻은 아니에요.</b></span></div>` : ""}
+    <div class="ds-links">${lawLink}${submitLink}</div>
   </div>`;
 }
 
@@ -775,15 +1028,35 @@ async function freeReply(text) {
     pushAINode(quickActions());
     return;
   }
+  // "다시 진단해줘" 류 → 같은 주소·use로 실제 재진단 트리거(캔드 응답 금지)
+  if (/다시|재진단|새로|재검토|다시\s*해/.test(text)) { rediagnose(); return; }
   // 진단 후 추가질문 — 정적 안내(가짜 결과 금지)
   let r;
-  if (/용적률/.test(text)) r = `${T("용적률")}은 대지 면적 대비 모든 층 바닥을 합한 비율로, 건물을 얼마나 높이 올릴 수 있는지를 정해요. 이 주소의 정확한 한도는 위 진단의 ‘판단 근거’와 관할 조례에서 확인하세요.`;
+  if (/용적률/.test(text)) r = `${T("용적률")}은 대지 면적 대비 모든 층 바닥을 합한 비율로, 건물을 얼마나 높이 올릴 수 있는지를 정해요. 이 주소의 정확한 한도는 우측 패널의 ‘판단 근거’와 관할 조례에서 확인하세요.`;
   else if (/건폐율/.test(text)) r = `${T("건폐율")}은 대지에서 건물이 바닥으로 덮는 비율이에요. 1층을 얼마나 넓게 깔 수 있는지를 정해요.`;
   else if (/세움터|어디|접수|신청/.test(text)) r = "세움터(eais.go.kr) 로그인 → ‘건축 인허가’ → 해당 단계를 선택해 신청해요. 농지전용 등 일부는 정부24에서 처리해요.";
-  else if (/서류|준비/.test(text)) r = "위 <b>단계별 필요 서류</b> 카드에서 각 단계 건수와 발급처를 확인하세요. ‘확인필요’ 단계는 자동 조회가 안 돼 직접 확인이 필요해요.";
-  else if (/다시|재진단|새로/.test(text)) r = "같은 주소로 다시 진단하려면 위에서 건축 행위를 다시 고르거나, ‘주소 변경’으로 새 상담을 시작하세요.";
-  else r = "이 주소·조건 기준으로 위 진단 카드와 서류 안내를 확인해 보세요. 용적률·건폐율·서류·관할 같은 주제로 물어보시면 더 설명해 드릴게요. 최종 허가 여부는 관할 기관 확인이 필요해요.";
+  else if (/서류|준비/.test(text)) r = "우측 패널의 <b>단계별 제출 서류</b>에서 단계별 실제 서류 목록과 발급처·서식 링크를 확인하세요. ‘확인필요’ 단계는 자동 조회가 안 돼 발급처에서 직접 확인이 필요해요.";
+  else r = "이 주소·조건 기준 진단 결과는 ‘자세히 보기’로 우측 패널에서 확인할 수 있어요. 용적률·건폐율·서류·관할 같은 주제로 물어보시면 더 설명해 드릴게요. 다시 진단하려면 ‘다시 진단해줘’라고 해주세요.";
   await aiSay(r, 550);
+}
+
+// 같은 주소·use_type·규모로 /diagnose/stream 재실행(실제 재진단)
+async function rediagnose() {
+  const c = S.active;
+  if (!c) return;
+  if (!c.use_type) { await aiSay("어떤 건축 행위로 다시 진단할지 먼저 알려주세요.", 400); pushAINode(quickActions()); return; }
+  closePanel();
+  await aiSay(`<b>${esc(c.loc.address)}</b> 기준으로 다시 진단할게요.`, 400);
+  setStage(2);
+  const area = c.floor_area != null ? c.floor_area : "";
+  const floors = c.floor_count != null ? c.floor_count : "";
+  const params = { address: c.loc.address, use_type: c.use_type || "근린생활시설" };
+  if (area !== "") params.floor_area = String(area);
+  if (floors !== "") params.floor_count = String(floors);
+  // floor_area/count는 백엔드 필수 — 없으면 기본 보정(없으면 인터럽트로 다시 물음)
+  if (params.floor_area == null) params.floor_area = "100";
+  if (params.floor_count == null) params.floor_count = "1";
+  runDiagnoseStream("/diagnose/stream?" + new URLSearchParams(params).toString());
 }
 
 // ============================================================
@@ -791,6 +1064,7 @@ async function freeReply(text) {
 // ============================================================
 function wireDynamic() {
   $$(".qa[data-use]").forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => chooseUse(b.dataset.use, b.dataset.name); });
+  $$('[data-act="openpanel"]').forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => { if (S.active) { renderPanel(S.active); openPanel(); } }; });
   $$("#sfGo").forEach((b) => {
     if (b._w) return; b._w = 1;
     b.onclick = () => {
@@ -875,6 +1149,11 @@ async function init() {
   $("#scrim") && ($("#scrim").onclick = closeDrawer);
   $("#mbarChange") && ($("#mbarChange").onclick = openMap);
   window.__closeDrawer = closeDrawer;
+  // 결과 패널 닫기/백드롭/재오픈 와이어링
+  $("#rpClose") && ($("#rpClose").onclick = closePanel);
+  $("#rpBackdrop") && ($("#rpBackdrop").onclick = closePanel);
+  $("#rpClose") && ($("#rpClose").innerHTML = I.x);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
   renderRail();
   wireComposer();
   showOnboard();

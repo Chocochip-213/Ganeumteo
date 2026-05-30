@@ -25,6 +25,110 @@
   .verdict-card .bsrc.bsrc-law { color: var(--sky-700); background: var(--sky-50); }
   .verdict-card .cite-meta { font-size: 12px; color: var(--fg-3); margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-1); }
   .verdict-card .basis-wrap .basis-item:last-child { border-bottom: none; }
+
+  /* ── 채팅: 접힌 "검토 중" 상태 버블(현재 단계 1줄만 subtle) ── */
+  .thinking-bubble { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: 600px; }
+  .thinking-bubble .think-spin { width: 16px; height: 16px; border-radius: 999px; border: 2.5px solid var(--sky-200); border-top-color: var(--sky-600); animation: spin 0.8s linear infinite; flex-shrink: 0; }
+  .thinking-bubble .tb-t { font-weight: 700; color: var(--fg-2); }
+  .thinking-bubble .tb-step { font-size: 13px; color: var(--fg-3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── 채팅: AI 답변 메시지(판정 한 줄 + 대화체 요약 + '자세히 보기' 1개) ── */
+  .answer-msg { max-width: 600px; width: 100%; border: 1.5px solid var(--border-1); border-radius: 15px; border-top-left-radius: 5px; background: var(--bg-surface); padding: 15px 17px; }
+  .answer-msg.go { border-color: color-mix(in srgb, var(--success) 35%, var(--border-1)); }
+  .answer-msg.cond { border-color: color-mix(in srgb, var(--warm) 38%, var(--border-1)); }
+  .answer-msg .am-head { display: flex; align-items: flex-start; gap: 11px; }
+  .answer-msg .am-sig { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; }
+  .answer-msg.go .am-sig { background: var(--success); } .answer-msg.cond .am-sig { background: var(--warm); } .answer-msg.check .am-sig { background: var(--sky-500); }
+  .answer-msg .am-verdict { font-size: 16px; font-weight: 600; line-height: 1.5; letter-spacing: -0.01em; color: var(--fg-1); padding-top: 4px; }
+  .answer-msg .am-verdict b { font-weight: 800; }
+  .answer-msg .am-body { margin-top: 11px; display: flex; flex-direction: column; gap: 5px; }
+  .answer-msg .am-line { font-size: 14.5px; line-height: 1.6; color: var(--fg-2); }
+  .answer-msg .am-line b { font-weight: 700; color: var(--fg-1); }
+  .answer-msg .am-open { display: inline-flex; align-items: center; gap: 7px; margin-top: 13px; border: none; border-radius: 11px; padding: 10px 15px; font-size: 14px; font-weight: 700; color: #fff; background: var(--sky-500); transition: background var(--t-fast) var(--ease-out); }
+  .answer-msg .am-open:hover { background: var(--sky-600); }
+  .answer-msg .am-open:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+
+  /* ── 우측 결과 패널 (ChatGPT 캔버스식 슬라이드) ── */
+  .rp-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.32); z-index: 110; opacity: 0; pointer-events: none; transition: opacity var(--t-base) var(--ease-out); }
+  .rp-backdrop.show { opacity: 1; pointer-events: auto; }
+  .result-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 42vw); max-width: 100vw; background: var(--bg-page); border-left: 1px solid var(--border-1); box-shadow: -16px 0 44px rgba(15,23,42,0.16); z-index: 120; display: flex; flex-direction: column; transform: translateX(100%); transition: transform var(--t-base) var(--ease-out); }
+  .result-panel.open { transform: translateX(0); }
+  .rp-head { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border-1); background: color-mix(in srgb, var(--bg-surface) 90%, transparent); backdrop-filter: blur(6px); }
+  .rp-head .rp-ic { width: 36px; height: 36px; border-radius: 10px; background: var(--sky-50); color: var(--sky-600); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .rp-head .rp-meta { flex: 1; min-width: 0; }
+  .rp-head .rp-t { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.3; }
+  .rp-head .rp-s { font-size: 12px; color: var(--fg-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rp-head .rp-x { width: 36px; height: 36px; border-radius: 9px; border: 1px solid var(--border-1); background: var(--bg-surface); color: var(--fg-2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .rp-head .rp-x:hover { background: var(--neutral-100); }
+  .rp-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+  .rp-body::-webkit-scrollbar { width: 10px; } .rp-body::-webkit-scrollbar-thumb { background: var(--neutral-300); border-radius: 5px; }
+  .rp-body .card, .rp-body .verdict-card { max-width: 100%; }
+  .rp-sec-h { font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-3); padding: 4px 2px 0; display: flex; align-items: center; gap: 7px; }
+
+  /* ── 서류: 단계 카드 + 호별 체크리스트 + 목 들여쓰기 ── */
+  .doc-stage { border: 1px solid var(--border-1); border-radius: 14px; background: var(--bg-surface); overflow: hidden; }
+  .doc-stage + .doc-stage { margin-top: 10px; }
+  .ds-head { display: flex; align-items: flex-start; gap: 11px; padding: 14px 16px; }
+  .ds-num { width: 28px; height: 28px; border-radius: 999px; background: var(--sky-500); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+  .doc-stage.na .ds-num { background: var(--warm); }
+  .ds-main { flex: 1; min-width: 0; }
+  .ds-t { font-size: 15.5px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.3; }
+  .ds-law { font-size: 12.5px; color: var(--fg-3); margin-top: 3px; line-height: 1.45; }
+  .ds-badge { font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 3px 8px; white-space: nowrap; flex-shrink: 0; }
+  .ds-badge.ok { background: var(--success-bg); color: oklch(0.34 0.10 150); }
+  .ds-badge.na { background: var(--warm-bg); color: var(--warm-fg); }
+  .ds-items { padding: 0 16px 8px; display: flex; flex-direction: column; }
+  .ds-doc { display: flex; align-items: flex-start; gap: 9px; padding: 9px 0; border-top: 1px solid var(--border-1); }
+  .ds-doc .dchk { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--border-2); background: var(--neutral-50); color: var(--sky-600); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .ds-doc .dtxt { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.5; color: var(--fg-1); }
+  .ds-doc .dho { font-weight: 700; color: var(--fg-2); margin-right: 5px; }
+  .ds-proviso { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: var(--warm-fg); background: var(--warm-bg); border-radius: 999px; padding: 2px 7px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+  .ds-mok { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0 4px 30px; font-size: 12.5px; line-height: 1.5; color: var(--fg-2); }
+  .ds-mok .mho { font-weight: 700; color: var(--fg-3); flex-shrink: 0; }
+  .ds-mok .mbar { width: 2px; align-self: stretch; background: var(--neutral-200); border-radius: 2px; flex-shrink: 0; margin-right: 2px; }
+  .ds-na-note { padding: 0 16px 14px; font-size: 13px; color: var(--fg-2); line-height: 1.55; display: flex; gap: 8px; }
+  .ds-na-note svg { color: var(--warm); flex-shrink: 0; margin-top: 1px; }
+  .ds-links { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 16px 14px; border-top: 1px solid var(--border-1); }
+  .ds-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; border-radius: 9px; padding: 8px 12px; border: 1px solid var(--border-2); background: var(--bg-surface); color: var(--sky-700); text-decoration: none; transition: background var(--t-fast) var(--ease-out); }
+  .ds-link:hover { background: var(--sky-50); }
+  .ds-link svg { flex-shrink: 0; }
+
+  /* ── 우측 패널: 상세 추론 플로우(시간순 타임라인) ── */
+  .flow-list { position: relative; display: flex; flex-direction: column; }
+  .flow-item { display: flex; gap: 11px; padding: 0; }
+  .flow-item .fi-rail { width: 22px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+  .flow-item .fi-dot { width: 11px; height: 11px; border-radius: 999px; background: var(--neutral-300); margin-top: 4px; flex-shrink: 0; box-shadow: 0 0 0 3px var(--bg-page); z-index: 1; }
+  .flow-item .fi-rail::after { content: ""; flex: 1; width: 2px; background: var(--border-1); margin: 2px 0 0; }
+  .flow-item:last-child .fi-rail::after { display: none; }
+  .flow-item .fi-main { flex: 1; min-width: 0; padding-bottom: 14px; }
+  .flow-item .fi-t { font-size: 13.5px; font-weight: 700; color: var(--fg-1); letter-spacing: -0.01em; line-height: 1.4; }
+  .flow-item .fi-d { font-size: 12.5px; color: var(--fg-2); line-height: 1.55; margin-top: 3px; word-break: break-word; }
+  .flow-item.think .fi-dot { background: var(--sky-400); }
+  .flow-item.think .fi-d { color: var(--fg-2); font-style: italic; }
+  .flow-item.call .fi-dot { background: var(--sky-500); }
+  .flow-item.ok .fi-dot, .flow-item.done .fi-dot { background: var(--success); }
+  .flow-item.cite .fi-dot { background: var(--sky-600); }
+  .flow-item.verdict .fi-dot { background: var(--warm); }
+  .flow-item.na .fi-dot { background: var(--warm); }
+  .flow-item .flow-link { display: inline-flex; align-items: center; gap: 4px; color: var(--sky-700); text-decoration: none; font-weight: 600; white-space: nowrap; }
+  .flow-item .flow-link svg { flex-shrink: 0; }
+
+  /* ── 우측 패널: 규모/부담금/주차 미니 카드 ── */
+  .mini-card { padding: 16px 18px; }
+  .mini-card .mini-note { display: flex; gap: 8px; font-size: 13px; line-height: 1.55; color: var(--fg-2); margin-top: 8px; }
+  .mini-card .mini-note:first-of-type { margin-top: 0; }
+  .mini-card .mini-note svg { color: var(--sky-500); flex-shrink: 0; margin-top: 2px; }
+  .lv-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border-1); }
+  .lv-row:first-of-type { border-top: none; padding-top: 0; }
+  .lv-row .lv-t { font-size: 14px; font-weight: 700; color: var(--fg-1); letter-spacing: -0.01em; }
+  .lv-row .lv-m { font-size: 12px; color: var(--fg-3); line-height: 1.5; margin-top: 2px; }
+  .lv-row .lv-amt { font-size: 14.5px; font-weight: 800; color: var(--sky-700); white-space: nowrap; flex-shrink: 0; }
+  .lv-row .lv-amt.na { font-size: 12.5px; font-weight: 700; color: var(--warm-fg); }
+
+  @media (max-width: 768px) {
+    .result-panel { width: 100vw; border-left: none; }
+    .answer-msg { max-width: 100%; }
+  }
 </style>
 </head>
 <body>
@@ -80,6 +184,17 @@
 
 <div class="scrim" id="scrim"></div>
 <div class="overlay" id="overlay"></div>
+
+<!-- 우측 결과 패널 (진단 결과·서류·근거) -->
+<div class="rp-backdrop" id="rpBackdrop"></div>
+<aside class="result-panel" id="resultPanel" aria-hidden="true">
+  <div class="rp-head">
+    <div class="rp-ic" id="rpIcon"></div>
+    <div class="rp-meta"><div class="rp-t" id="rpTitle">진단 결과</div><div class="rp-s" id="rpSub"></div></div>
+    <button class="rp-x" id="rpClose" aria-label="결과 패널 닫기"></button>
+  </div>
+  <div class="rp-body" id="rpBody"></div>
+</aside>
 
 <script type="module" src="./chat.js"></script>
 </body>
