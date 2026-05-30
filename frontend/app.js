@@ -44,6 +44,7 @@ async function fetchResult() {
     const r = await fetch("/diagnose/result?thread_id=" + encodeURIComponent(threadId));
     const j = await r.json();
     renderCard($("#card"), j._return, j.citations);
+    if (j.xy) renderMap(j.xy, j.address, j.jimok, j.zone);
   } catch (err) {
     $("#card").innerHTML = "<p class='placeholder'>결과를 불러오지 못했습니다.</p>";
   }
@@ -80,4 +81,33 @@ function showHitl(detail) {
   wrap.appendChild(box);
 }
 
+// ── 카카오맵: JS키는 /config(.env)서 받아 SDK 동적 로드. 도메인 미등록/키없음이면 graceful 생략 ──
+async function loadKakao() {
+  try {
+    const r = await fetch("/config");
+    const j = await r.json();
+    if (!j.kakao_js_key) return;
+    const s = document.createElement("script");
+    s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${j.kakao_js_key}&autoload=false`;
+    s.onload = () => { if (window.kakao && kakao.maps) kakao.maps.load(() => { window._kakaoReady = true; }); };
+    s.onerror = () => console.warn("kakao SDK 로드 실패 — 카카오 콘솔에 localhost:8000 도메인 등록 확인");
+    document.head.appendChild(s);
+  } catch (e) { /* config 없으면 맵 생략 */ }
+}
+
+function renderMap(xy, address, jimok, zone) {
+  const el = document.getElementById("map");
+  if (!el) return;
+  if (!xy || !window._kakaoReady || !window.kakao || !kakao.maps) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  const center = new kakao.maps.LatLng(xy[1], xy[0]);   // VWorld x=경도, y=위도 → LatLng(위도, 경도)
+  const map = new kakao.maps.Map(el, { center, level: 3 });
+  new kakao.maps.Marker({ position: center, map });
+  new kakao.maps.InfoWindow({
+    position: center,
+    content: `<div style="padding:5px 9px;font-size:12px;white-space:nowrap">${address || ""} · 지목 ${jimok || "?"} · ${zone || "?"}</div>`,
+  }).open(map);
+}
+
+loadKakao();
 $("#in").addEventListener("submit", start);

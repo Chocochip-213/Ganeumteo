@@ -2,6 +2,7 @@
 """가늠터 FastAPI — react_proto 그래프를 SSE로 래핑 + 프론트 same-origin 서빙.
 실행: uv run uvicorn app:app --app-dir <ganeomteo\\backend> --port 8000  (검수 fix#5: flat import)
 단일사용자 데모 가정(MemorySaver in-proc). thread_id는 서버 생성→첫 SSE 프레임 반환(fix#11)."""
+import os
 import json
 from pathlib import Path
 from fastapi import FastAPI
@@ -47,11 +48,19 @@ def diagnose_resume(thread_id: str, floor_area: float = None, floor_count: int =
 
 @app.get("/diagnose/result")
 def diagnose_result(thread_id: str):
-    """완료 후 ReturnEnvelope(_return: 4키) + 전체 citation 객체(카드 렌더용)."""
+    """완료 후 ReturnEnvelope(_return: 4키) + 전체 citation 객체(카드 렌더용) + 좌표(카카오맵용)."""
     _, cfg = make_config(thread_id)
     vals = GRAPH.get_state(cfg).values
-    body = {"_return": vals.get("_return"), "citations": vals.get("citations", [])}
+    body = {"_return": vals.get("_return"), "citations": vals.get("citations", []),
+            "xy": vals.get("_xy"), "pnu": vals.get("pnu"), "address": vals.get("address"),
+            "jimok": vals.get("jimok"), "zone": vals.get("zone")}
     return JSONResponse(content=json.loads(json.dumps(body, ensure_ascii=False, default=str)))
+
+
+@app.get("/config")
+def config():
+    """프론트 설정 — 카카오 JS키는 .env에서(코드 하드코딩 금지). 없으면 빈값→맵 생략."""
+    return {"kakao_js_key": os.environ.get("KAKAO_KEY", "")}
 
 
 # 정적 프론트(same-origin, CORS 불필요) — /diagnose/* 라우트 뒤에 마운트해 우선순위 유지
