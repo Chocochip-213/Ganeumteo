@@ -62,6 +62,21 @@ class ScaleLimit(BaseModel):
     energy_saving_required: bool
     structural_safety_required: bool
     notes: List[str] = Field(default_factory=list)
+    # 건폐율·용적률 envelope(compute_envelope가 채움 — bcr/far는 LLM이 시행령§84/§85·조례서 읽어 전달)
+    max_building_area: Optional[float] = None   # 대지면적×건폐율% (㎡)
+    max_floor_area: Optional[float] = None      # 대지면적×용적률% (㎡)
+    approx_floors: Optional[float] = None        # 연면적/건축면적 약식층수
+    envelope_note: Optional[str] = None          # 근거·확인필요 꼬리표(용적률 범위함정 등)
+
+
+class LevyItem(BaseModel):
+    """부담금: 산식은 법공식(결정적), 단가·금액은 LLM이 법령서 읽은 값만. 없으면 amount=None+확인필요."""
+    levy_type: str                                # 농지보전부담금 | 대체산림자원조성비 | 개발부담금
+    formula: str = ""                             # 산식(법 공식)
+    amount: Optional[int] = None                  # 산출 금액(원). 단가 데이터원 없으면 None
+    status: str = "확인필요"                       # 산출 | 확인필요
+    note: str = ""
+    citation: Optional[Citation] = None
 
 
 class GaneomteoState(TypedDict):
@@ -82,6 +97,7 @@ class GaneomteoState(TypedDict):
     zone_ucodes: NotRequired[list]
     road_side: NotRequired[str]
     land_price: NotRequired[Optional[int]]
+    land_area: NotRequired[Optional[float]]   # 대지면적 lndpclAr(㎡) — get_land_use가 추출, 부담금·envelope 입력
     reg_overlaps: Annotated[list, operator.add]
     # ── 판정
     act_verdict: NotRequired[str]
@@ -95,7 +111,9 @@ class GaneomteoState(TypedDict):
     reg_effects: Annotated[list, operator.add]
     jorye_verdicts: Annotated[list, operator.add]
     author: NotRequired[dict]
-    scale_limits: NotRequired[dict]
+    scale_limits: NotRequired[dict]          # compute_scale·compute_envelope 공용(overwrite — envelope가 ScaleLimit 확장)
+    parking_req: NotRequired[dict]           # parking_quota 산출(부설주차 N대) — scale_limits와 분리(덮어쓰기 충돌 방지)
+    levies: Annotated[list, operator.add]    # 부담금(농지보전·대체산림·개발) — levy_estimate가 누적
     citations: Annotated[list, operator.add]
     abstentions: Annotated[list, operator.add]
     legal_reasoning: NotRequired[dict]
