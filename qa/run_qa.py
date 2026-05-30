@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """실제 graph.invoke로 다중 케이스 + 엣지를 캡처 → fixtures/*.json (날조 0). 구조·graceful 어설션.
-실행: cd react_proto; $env:FORCE_STUB='1'; uv run python ..\\ganeomteo\\qa\\run_qa.py
+실행: cd ganeomteo; $env:FORCE_STUB='1'; uv run python qa\\run_qa.py
 (Windows cmd `set X=1 && uv run`는 subprocess에 전파 안 됨 — 아래처럼 os.environ in-process로 강제.)"""
 import os, sys, json
 os.environ["FORCE_STUB"] = "1"                       # in-process(전파 보장)
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-_GAN = r"C:\Users\kmw16\Desktop\agent\probe\ganeomteo"
+_GAN = str(__import__("pathlib").Path(__file__).resolve().parents[1])   # ganeomteo(통합)
 sys.path.insert(0, _GAN + r"\backend")
 sys.path.insert(0, _GAN)
 import proto_bridge as PB

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """가늠터 FastAPI — react_proto 그래프를 SSE로 래핑 + 프론트 same-origin 서빙.
-실행: uv run uvicorn app:app --app-dir <ganeomteo\\backend> --port 8000  (검수 fix#5: flat import)
+실행: cd ganeomteo; uv run uvicorn app:app --app-dir backend --port 8000  (통합: 단일 레포)
 단일사용자 데모 가정(MemorySaver in-proc). thread_id는 서버 생성→첫 SSE 프레임 반환(fix#11)."""
 import os
 import json

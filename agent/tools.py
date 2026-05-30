@@ -8,7 +8,8 @@ from langchain_core.tools import tool, InjectedToolCallId
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
-sys.path.insert(0, r"C:\Users\kmw16\Desktop\agent\probe\research")
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "lawlib"))   # 통합: research→lawlib(상대경로)
 import law_fetch as L            # search/service/ordin_search/ordin_service (실증)
 import wf_e2e_live as W          # geo/parcel/ned/act/dig (실증 VWorld+행위제한)
 import wf_docs_agent as DOC      # docs_for (시행규칙 조문 호 전수)

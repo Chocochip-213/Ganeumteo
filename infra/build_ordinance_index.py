@@ -4,8 +4,8 @@
 import sys, re, io, zlib, time, zipfile, urllib.request
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-sys.path.insert(0, r"C:\Users\kmw16\Desktop\agent\probe\ganeomteo")
-sys.path.insert(0, r"C:\Users\kmw16\Desktop\agent\probe\research")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]))                # ganeomteo
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "lawlib"))     # research→lawlib(통합)
 import olefile
 import law_fetch as L
 from infra.embed import embed_batch

@@ -2,13 +2,13 @@
 """react_proto LangGraph로의 단일 import 경계. 그래프 1회 빌드(MemorySaver 체크포인터).
 검수 fix#4: sys.path에 ganeomteo도 넣어 react_proto/tools.py의 `import infra.ordin_rag` 동작 + RAG 임포트 스모크(죽은 RAG 가시화)."""
 import sys
+from pathlib import Path
 
-_GANEOMTEO = r"C:\Users\kmw16\Desktop\agent\probe\ganeomteo"
-_RESEARCH = r"C:\Users\kmw16\Desktop\agent\probe\research"
-_REACT = r"C:\Users\kmw16\Desktop\agent\probe\react_proto"
-for _p in (_GANEOMTEO, _RESEARCH, _REACT):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+_GAN = Path(__file__).resolve().parents[1]   # ganeomteo/ (단일 홈)
+for _p in (_GAN, _GAN / "lawlib", _GAN / "agent"):   # infra.ordin_rag / law_fetch·wf_* / graph·tools·state·agent
+    _ps = str(_p)
+    if _ps not in sys.path:
+        sys.path.insert(0, _ps)
 
 # RAG 임포트 스모크 — 실패하면 조용히 죽지 않고 경고(검수 fix#4)
 try:

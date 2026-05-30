@@ -110,7 +110,7 @@ def _agent_invoke(llm, msgs):
 
 def make_agent_node():
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))   # ganeomteo/.env(상위 — embed.py와 동일 위치)
     if os.environ.get("FORCE_STUB"):   # 빠른 광역 검증용(LLM 우회)
         def agent_node(state):
             return {"messages": [stub_plan(state)]}

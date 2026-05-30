@@ -3,7 +3,7 @@
 양평 자연녹지 카페: RAG HIT(별표16) → 멀티홉(건축법 시행령 별표1) → 실 호목해소 verdict."""
 import sys, io, os, json
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-_GAN = r"C:\Users\kmw16\Desktop\agent\probe\ganeomteo"
+_GAN = str(__import__("pathlib").Path(__file__).resolve().parents[1])   # ganeomteo(통합)
 sys.path.insert(0, _GAN + r"\backend"); sys.path.insert(0, _GAN)
 import proto_bridge as PB
 from state_init import fresh_state, make_config

@@ -4,7 +4,7 @@ import os, time
 from pathlib import Path
 from openai import OpenAI
 
-_ENV = Path(__file__).resolve().parents[2] / "react_proto" / ".env"   # probe/react_proto/.env
+_ENV = Path(__file__).resolve().parents[1] / ".env"   # ganeomteo/.env(통합)
 BASE_URL = "https://gms.ssafy.io/gmsapi/api.openai.com/v1"
 EMBED_MODEL = "text-embedding-3-large"
 EMBED_DIM = 3072                       # SSOT — index와 query 임베딩 동일 모델·차원 필수
