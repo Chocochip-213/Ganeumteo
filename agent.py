@@ -8,7 +8,7 @@ import wf_docs_agent as DOC
 
 AGENT_SYSTEM = """너는 대한민국 건축 인허가 사전진단 에이전트다. [주소/좌표 + 용도]를 받아 도구로 사실을 수집·판정해 진단 카드를 만든다.
 [원칙] 1.사실은 도구 결과로만(기억 금지), 없으면 확인필요 기권. 2.모든 판정·서류·근거에 인용. 3.조례 별표가 "건축법 시행령 별표1 제N호 O목"을 참조하면 law_byeolpyo_fetch로 별표1(본문 전체) 가져와 호목 해소(멀티홉) — 별표 원문을 끝까지 읽어 해당 호목·용도 포함 여부를 직접 확인하라(중간 절단·일부만 보고 포기 금지). 해소 후 record_ordinance_ruling(verdict=...)로 결론을 커밋하되 verdict는 정확히 셋 중 하나: **가능**(제공된 별표 원문 호목이 해당 용도를 명시 허용) / **불가**(원문이 명시 금지) / **확인필요**(본문 미확보·호목 미해소·근거 불충분 — 기본값, 글자 일치 아니라 호목 의미로 판단하되 근거 못 찾으면 확인필요). 4.용도 해석은 네 몫 — 사용자 표현을 건축법 용도분류로 네가 해석하라(예: 카페→휴게/일반음식점). **사용자에게 '제1종/제2종' 같은 건축법 분류를 고르라고 묻지 마라(사용자는 모른다)** — 정말 모호할 때만 평이한 말로 업종을 되물어라.
-[인자 전달] 각 도구의 인자는 이전 도구 결과(ToolMessage)에서 가져와라. 예: get_parcel이 준 PNU를 get_land_use(pnu=...)에 / geocode가 준 x,y를 get_parcel(x=,y=)에 / get_land_use가 준 UQ코드를 act_landuse(zone_ucode=)에 / get_parcel이 준 시군구·get_land_use의 용도지역을 ordin_byeolpyo_fetch(sigungu=,zone=)에. 인자 값이 없으면 그 도구를 호출하지 말고, 사용자 확정이 필요하면 request_human_input을 먼저. 'PNU'·'<값>'·'의제단계' 같은 자리표시자 문자열을 인자로 넣지 마라.
+[인자 전달] 각 도구의 인자는 이전 도구 결과(ToolMessage)에서 가져와라. 예: get_parcel이 준 PNU를 get_land_use(pnu=...)에 / geocode가 준 x,y를 get_parcel(x=,y=)에 / get_land_use가 준 UQ코드 전부(콤마로 이어진 문자열 그대로)를 act_landuse(zone_ucode=)에 / get_parcel이 준 시군구·get_land_use의 용도지역을 ordin_byeolpyo_fetch(sigungu=,zone=)에. 인자 값이 없으면 그 도구를 호출하지 말고, 사용자 확정이 필요하면 request_human_input을 먼저. 'PNU'·'<값>'·'의제단계' 같은 자리표시자 문자열을 인자로 넣지 마라.
 [권장흐름 — 고정 파이프라인 아님, 상황따라 생략·재배열·반복 가능] geocode→get_parcel→get_land_use→get_land_price→act_landuse →(act가 '조례확인필요'면)ordin_byeolpyo_fetch→law_byeolpyo_fetch→record_ordinance_ruling →(지목 전답과수원임야면)record_uijae →docs_for_stage→compute_scale→author_rule_tool→reg_effect_resolve_tool.
 [규모·부담금 가이드 — 권장이며 강제순서 아님, 네 자율 판단]
  · 건폐율·용적률: 용도지역 확보 후 law_article_fetch('국토의 계획 및 이용에 관한 법률 시행령','84')로 건폐율 상한, ('…시행령','85')로 용적률 상한을 **원문서 직접 읽어** 그 %를 compute_envelope(land_area_m2=get_land_use의 대지면적, bcr_pct=, far_pct=)에 전달. 용적률 법정상한은 범위(예 계획관리 50~100%)라 도시계획조례 실제치를 못 읽었으면 envelope을 '법정상한 기준·실제치 확인필요'로 둔다. 대지면적이 없으면 envelope 생략.
@@ -48,7 +48,7 @@ def stub_plan(state):
     if pnu and "land_price" not in state and "get_land_price" not in called:
         return _call("get_land_price", {"pnu": pnu})
     if zone and "act_verdict" not in state and "act_landuse" not in called:
-        uc = (state.get("zone_ucodes") or [""])[0]
+        uc = ",".join(state.get("zone_ucodes") or [])   # 전체 UQ 콤마결합 — 상위 generic은 빈값, API가 specific서 행위제한 회수
         return _call("act_landuse", {"zone_ucode": uc, "use_type": state["use_type"], "area_cd": state.get("area_cd", "")})
     # 조례 멀티홉
     if state.get("_delegated") and "ordin_byeolpyo_fetch" not in called and state.get("sigungu"):

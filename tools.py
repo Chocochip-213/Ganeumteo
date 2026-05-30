@@ -85,7 +85,7 @@ def get_land_use(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> 
         land_area = None
     upd = {"zone": zone, "zone_ucodes": uq, "reg_overlaps": regs, "road_side": road,
            "_toolcalls": ["get_land_use"],
-           "messages": [_tm(f"용도지역={zone} 대지면적={land_area}㎡ 도로접면={road} UQ={uq[:3]} 규제={regs}", tool_call_id)]}
+           "messages": [_tm(f"용도지역={zone} 대지면적={land_area}㎡ 도로접면={road} UQ(전부 콤마로 이어 act_landuse에 그대로)={','.join(uq)} 규제={regs}", tool_call_id)]}
     if land_area is not None:
         upd["land_area"] = land_area
     return Command(update=upd)
@@ -114,7 +114,7 @@ def get_land_price(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -
 def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
                 tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """행위제한 1차판정 + 조례위임 감지. data.go.kr 1613000.
-    입력: zone_ucode=get_land_use의 UQ코드 말단. use_type=**건축법 용도분류상 시설명**(사용자 표현을 건축법 용도로 해석해 전달 — 예 카페→일반음식점, 사무실→업무시설, 다세대→공동주택. API가 이 시설명으로 행위제한 조회). area_cd=get_parcel의 area_cd(PNU 앞5).
+    입력: zone_ucode=get_land_use의 UQ코드 **전부를 콤마로 이어** 그대로(예 UQA001,UQA121 — 상위 generic 코드는 빈값이라 API가 specific 코드에서 행위제한 회수). use_type=**건축법 용도분류상 시설명**(사용자 표현을 건축법 용도로 해석해 전달 — 예 카페→일반음식점, 사무실→업무시설, 다세대→공동주택. API가 이 시설명으로 행위제한 조회). area_cd=get_parcel의 area_cd(PNU 앞5).
     반환 act_verdict∈{가능(법령직접), 조례확인필요(혼재), 조례확인필요}. 빈값·혼재=조례위임(_delegated=True) → 단정 말고 ordin_byeolpyo_fetch로 진행."""
     det = W.act_detail(zone_ucode, use_type, area_cd)   # item별 reg+근거조항+시설명 — act가 버리던 근거 보존
     rg = [d["reg"] for d in det]                          # 가부 신호(REG_NM=API 자체 판정 enum; 도구는 읽기만, 단정 아님)
