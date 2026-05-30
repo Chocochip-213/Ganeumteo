@@ -5,7 +5,7 @@
 import os
 import json
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -34,14 +34,13 @@ def diagnose_stream(address: str, use_type: str, floor_area: float = None, floor
 
 
 @app.get("/diagnose/resume")
-def diagnose_resume(thread_id: str, floor_area: float = None, floor_count: int = None,
-                    use_type: str = None, reject: bool = False):
+def diagnose_resume(thread_id: str, request: Request, reject: bool = False):
     _, cfg = make_config(thread_id)
     if reject:
         resume = {"type": "reject"}
     else:
-        resume = {k: v for k, v in (("floor_area", floor_area), ("floor_count", floor_count),
-                                    ("use_type", use_type)) if v is not None}
+        # 에이전트가 요청한 임의 필드를 그대로 왕복(confirm_*, correct_* 등 — floor/use에 한정 안 함)
+        resume = {k: v for k, v in request.query_params.items() if k not in ("thread_id", "reject")}
     return StreamingResponse(sse.run_stream(GRAPH, None, cfg, resume=resume),
                              media_type="text/event-stream", headers=_SSE_HEADERS)
 
