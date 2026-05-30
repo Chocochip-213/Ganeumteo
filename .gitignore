@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.log
+.env
+infra/_smoke.py
+infra/_test_rag.py
+qa/fixtures/*.txt
+.venv/
