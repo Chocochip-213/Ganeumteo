@@ -38,7 +38,7 @@ _GUARD_BOUNCE_CAP = 19  # 이 이상이면 guard 바운스 중단(진행)
 def route_after_agent(state):
     base_s = state.get("_turn_base_steps", 0)            # 후속턴: 이번 invoke 기준(thread 누적 아님)
     base_t = state.get("_turn_base_tools", 0)
-    if state.get("terminal_reason") in ("site_geocode_failed", "aborted", "error"):  # H4 조기종료
+    if state.get("terminal_reason") in ("site_geocode_failed", "aborted", "error", "llm_error"):  # H4 조기종료 + LLM 실패 즉시 중단(다시하기 유도)
         return "abstain"
     if state.get("_steps", 0) - base_s >= _STEP_HARDCAP:    # 이번 invoke 하드캡 — followup 누적 잠금 방지(검수 AF-3)
         return "completeness_guard"
@@ -213,7 +213,7 @@ def compose(state):
 
 _STATUS = {"completed": "완료", "verdict_resolved": "조기종료", "need_human": "사람검토",
            "site_geocode_failed": "재입력필요", "fallback_extract_failed": "부분완료",
-           "error": "부분완료", "aborted": "중단"}
+           "error": "부분완료", "aborted": "중단", "llm_error": "재시도필요"}
 
 
 def finalize(state):
