@@ -179,19 +179,19 @@ def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, I
                         quote=body[:110], extract_method="인덱스청크").model_dump()
         return Command(update={"citations": [cite], "_delegated": True, "doc_index_hit": True,
                                "_toolcalls": ["ordin_byeolpyo_fetch"],
-                               "messages": [_tm(f"[조례 별표 BodyText(인덱스):{art}]\n{body[:2500]}", tool_call_id)]})
+                               "messages": [_tm(f"[조례 별표 BodyText(인덱스):{art}]\n{body[:12000]}" + ("" if len(body) <= 12000 else f"\n\n…[본문 {len(body)}자 중 12000자 표시·이후 절단 — 못 찾으면 확인필요]"), tool_call_id)]})
     # ── 라이브 폴백(기존 경로 — 불변) ──
     text, meta = _ordin_bodytext(sigungu, zone)
     if not text:
         return Command(update={"jorye_verdicts": [JoryeVerdict(ordin_name=meta.get("조례명"), verdict="확인필요",
                                reason="별표 추출 실패(미인덱싱/hwpx)").model_dump()],
                                "doc_index_hit": False, "_toolcalls": ["ordin_byeolpyo_fetch"],
-                               "messages": [_tm(f"조례 별표 추출 실패: {meta}", tool_call_id)]})
+                               "messages": [_tm(f"조례 별표 추출 실패: {meta}. → law_byeolpyo_fetch로 건축법 시행령 별표1을 직접 조회해 호목 해소를 시도하고, 끝내 못 얻으면 확인필요로 둬라.", tool_call_id)]})
     cite = Citation(source="ordin", law_name=meta["조례명"], article=meta["별표"], quote=text[:110],
                     extract_method="BodyText").model_dump()
     # 멀티홉 본문을 ToolMessage로 → (실 LLM) agent가 호목참조 읽고 다음 홉 결정
     return Command(update={"citations": [cite], "_delegated": True, "doc_index_hit": False, "_toolcalls": ["ordin_byeolpyo_fetch"],
-                           "messages": [_tm(f"[조례 별표 BodyText:{meta['별표']}]\n{text[:2500]}", tool_call_id)]})
+                           "messages": [_tm(f"[조례 별표 BodyText:{meta['별표']}]\n{text[:12000]}" + ("" if len(text) <= 12000 else f"\n\n…[본문 {len(text)}자 중 12000자 표시·이후 절단 — 못 찾으면 확인필요]"), tool_call_id)]})
 
 
 @tool
@@ -307,7 +307,7 @@ def law_article_fetch(law_name: str, article: str, tool_call_id: Annotated[str, 
         cite = Citation(source="law", law_name=law_name, article=f"{label}({title})" if title else label,
                         quote=full[:200]).model_dump()
         return Command(update={"citations": [cite], "_toolcalls": ["law_article_fetch"],
-                               "messages": [_tm(f"[{law_name} {label}{('('+title+')') if title else ''}]\n{full[:7000]}", tool_call_id)]})
+                               "messages": [_tm(f"[{law_name} {label}{('('+title+')') if title else ''}]\n{full[:7000]}" + ("" if len(full) <= 7000 else f"\n\n…[조문 {len(full)}자 중 7000자 표시·이후 절단 — 항·호를 좁혀 재확인하거나 못 찾으면 확인필요]"), tool_call_id)]})
     return Command(update={"_toolcalls": ["law_article_fetch"],
                            "messages": [_tm(f"'{law_name}' 제{jono}조{('의'+branch) if branch else ''} 조문 못찾음(번호 확인 후 재시도).", tool_call_id)]})
 

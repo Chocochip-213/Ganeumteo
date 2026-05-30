@@ -45,6 +45,10 @@ def route_after_agent(state):
 
 def completeness_guard(state):
     """결정적 누락 점검(부록 G4-2). 빠지면 agent 복귀 — 단 _steps 캡 내에서만(루프 방지)."""
+    msgs = state.get("messages") or []
+    last = msgs[-1] if msgs else None
+    stalled = (last is not None and not getattr(last, "tool_calls", None)
+               and not str(getattr(last, "content", "") or "").strip())   # agent 빈 메시지 정체 → 바운스해도 또 빔
     called = set(state.get("_toolcalls", []))
     miss = []
     if "get_parcel" not in called:
@@ -60,7 +64,7 @@ def completeness_guard(state):
         need = {"건축허가", "착공신고", "사용승인"} | {u.get("stage_key") for u in state.get("uijae", [])}
         if not need.issubset(doc_stages):
             miss.append("서류전수:" + ",".join(sorted(need - doc_stages)))
-    if miss and state.get("_steps", 0) < _GUARD_BOUNCE_CAP:
+    if miss and state.get("_steps", 0) < _GUARD_BOUNCE_CAP and not stalled:
         return {"_incomplete": True, "messages": [HumanMessage(f"아직 미확인: {miss}. 해당 도구로만 마저 조회하고, 끝나면 도구 없이 '완료'라 답하라.")]}
     if miss:   # 캡 도달 — 더 못 채움 → 기권 사유로 남기고 진행
         return {"_incomplete": False, "abstentions": [{"node": "completeness_guard", "사유": f"미충족 {miss}(스텝 캡)"}]}
