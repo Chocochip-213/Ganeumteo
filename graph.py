@@ -7,8 +7,6 @@ from state import GaneomteoState
 from tools import TOOLS
 from agent import make_agent_node
 
-_LANDUSE = ("전", "답", "과수원", "임야")
-
 
 _STEP_HARDCAP = 24      # agent 방문 하드캡(무한루프 방지)
 _GUARD_BOUNCE_CAP = 19  # 이 이상이면 guard 바운스 중단(진행)
@@ -31,7 +29,9 @@ def completeness_guard(state):
     miss = []
     if "get_parcel" not in called:
         miss.append("입지")
-    if state.get("jimok") in _LANDUSE and "record_uijae" not in called:
+    # 의제 누락은 jimok 코드매칭이 아니라 record_uijae 호출여부로 판단(전용 의제 판정은 LLM 몫).
+    # 서류 전수검사(아래)가 기록된 의제 stage_key를 need에 합산하므로 의제 커버리지는 거기서 일원 enforce.
+    if state.get("pnu") and "record_uijae" not in called:
         miss.append("의제")
     if state.get("_delegated") and "ordin_byeolpyo_fetch" not in called:
         miss.append("조례별표")
@@ -57,22 +57,20 @@ def route_after_guard(state):
 
 
 def _derive_verdict(state):
-    regs = (state.get("reg_overlaps") or []) + [state.get("zone") or ""]
-    if any(("개발제한" in r) or ("농업진흥" in r) for r in regs):   # H1: 강제금지 1차 게이트
-        return "위험·금지"
-    landuse = state.get("jimok") in _LANDUSE
+    # 조건부 수식어는 raw 지목 코드매칭이 아니라 LLM이 record_uijae로 기록한 의제 신호에서만 도출(전용허가 의제=조건부 근거).
+    conditional = bool(state.get("uijae"))
     jv = state.get("jorye_verdicts") or []
     real = [v for v in jv if v.get("verdict") not in ("확인필요", "", None)]  # H2: 실패append 무시
     pick = real[-1] if real else (jv[-1] if jv else None)
     if pick is not None:
         v = pick.get("verdict", "")
         if v == "가능":
-            return "가능(조건부)" if landuse else "가능"
+            return "가능(조건부)" if conditional else "가능"
         if v in ("불가", "위험·금지"):
             return "위험·금지"
         return "확인필요"
-    if "가능" in state.get("act_verdict", ""):
-        return "가능(조건부)" if landuse else "가능"
+    if state.get("act_verdict") == "가능(법령직접)":   # 도구계약 enum 정확비교(substring 금지)
+        return "가능(조건부)" if conditional else "가능"
     return "확인필요"  # 입지 미확보(API실패)도 여기 = 안전 degrade(거짓 가능 방지)
 
 
@@ -113,9 +111,21 @@ def build_reasoning(state):
     key_uncertain = any(s["status"] == "확인필요" and s["kind"] in ("행위제한", "조례호목해소") for s in steps)
     if key_uncertain and verdict in ("가능", "가능(조건부)", "조건부"):   # H5: 핵심단계 근거없으면 강등
         verdict = "확인필요"
-    return {"legal_reasoning": {"steps": steps, "verdict": verdict,
-            "verdict_basis_seq": [s["seq"] for s in steps if s["kind"] in ("행위제한", "조례호목해소")]},
-            "verdict": verdict}
+    # fail-closed(deny-first): 개발제한/농업진흥 등 강한 행위제한 규제가 겹쳤는데 그 행위제한 조문이
+    #  reg_effects로 근거확보되지 않았으면, 코드가 위험·금지를 단정하지 않되 거짓 '가능'도 막아 확인필요+사람검토로 보류.
+    #  (해당 규제의 가부 판정은 행위제한 조문 fetch+LLM 또는 사람검토 몫 — 코드 키워드가 최종 verdict를 생성하지 않음.)
+    regs = (state.get("reg_overlaps") or []) + [state.get("zone") or ""]
+    strong_regs = [r for r in regs if ("개발제한" in r) or ("농업진흥" in r)]
+    out = {}
+    if strong_regs and verdict in ("가능", "가능(조건부)", "조건부"):
+        grounded = {e.get("reg_name") for e in state.get("reg_effects", [])}
+        if not any(any(sr in (g or "") or (g or "") in sr for g in grounded) for sr in strong_regs):
+            verdict = "확인필요"
+            out["abstentions"] = [{"node": "build_reasoning", "사유": f"강한 행위제한 규제중첩 {strong_regs} — 행위제한 조문 미확보, 사람검토 필요"}]
+    out["legal_reasoning"] = {"steps": steps, "verdict": verdict,
+            "verdict_basis_seq": [s["seq"] for s in steps if s["kind"] in ("행위제한", "조례호목해소")]}
+    out["verdict"] = verdict
+    return out
 
 
 def compose(state):
