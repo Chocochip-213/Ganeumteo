@@ -89,6 +89,8 @@ def get_land_use(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> 
            "messages": [_tm(f"용도지역={zone} 대지면적={land_area}㎡ 도로접면={road} UQ(전부 콤마로 이어 act_landuse에 그대로)={','.join(uq)} 규제={regs}", tool_call_id)]}
     if land_area is not None:
         upd["land_area"] = land_area
+    if zone is None:   # 용도지역은 모든 필지에 존재 → None=NED 조회 실패(정당한 빈결과 아님), 정직 기권(검수 EB-3)
+        upd["abstentions"] = [{"node": "get_land_use", "사유": "용도지역 미확보(VWorld NED 빈응답/실패) — 직접 확인 필요"}]
     return Command(update=upd)
 
 
@@ -140,9 +142,12 @@ def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
              else f"{node} → {'/'.join(sorted(regs))}")
         cites.append(Citation(source="data", law_name="행위제한(국토부 1613000)", article=ref_law, quote=q).model_dump())
     detail = " / ".join(f"{d.get('node', '')}={d['reg']}({d.get('ref_law', '')})" for d in det) or "빈값"
-    return Command(update={"act_verdict": v, "act_reg_raw": rg, "_delegated": dele,
-                           "citations": cites, "_toolcalls": ["act_landuse"],
-                           "messages": [_tm(f"행위제한 {use_type}@{zone_ucode}: {detail} → {v}", tool_call_id)]})
+    upd = {"act_verdict": v, "act_reg_raw": rg, "_delegated": dele,
+           "citations": cites, "_toolcalls": ["act_landuse"],
+           "messages": [_tm(f"행위제한 {use_type}@{zone_ucode}: {detail} → {v}", tool_call_id)]}
+    if not det:   # 직접근거 0 — API 빈응답/세목 불일치/조례위임 구분불가 → 정직 기권(트레이스 '확보' 오표기 방지, 검수 EB-2)
+        upd["abstentions"] = [{"node": "act_landuse", "사유": f"행위제한 직접 근거 없음({use_type}) — 조례로 확인 필요"}]
+    return Command(update=upd)
 
 
 # ── 조례 별표 BodyText (멀티홉 1번째 홉) ─────────────────────
