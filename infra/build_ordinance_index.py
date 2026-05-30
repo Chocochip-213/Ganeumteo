@@ -130,8 +130,12 @@ def index_one(token, area_cd5):
         text, method = _extract_bodytext(url)
         if not text:
             print(f"SKIP {token} 별표{bno} '{title[:20]}': {method}"); continue
-        mz = re.search(r"([가-힣]+지역)", title)
-        zone = mz.group(1) if mz else (title[:20] or "용도지역")
+        mz = re.search(r"\]\s*(.+?)\s*안에서", title)        # "[별표N] <용도지역>안에서…" → 정확 zone(제N종 포함)
+        if mz:
+            zone = mz.group(1).strip()
+        else:
+            mz2 = re.search(r"([가-힣0-9]+지역|[가-힣]+지구)", title)
+            zone = mz2.group(1) if mz2 else (title[:20] or "용도지역")
         texts.append(text); metas.append((bno, title, zone, method, nm, str(mst)))
         print(f"OK   {token} 별표{bno} '{title[:24]}' zone={zone} {method} {len(text)}자")
     if not texts:
@@ -139,7 +143,7 @@ def index_one(token, area_cd5):
     vecs = embed_batch([t[:EMB_CAP] for t in texts])
     rows = []
     for (bno, title, zone, method, nm_, mst_), text, vec in zip(metas, texts, vecs):
-        rows.append({"chunk_id": f"{area_cd5}:{ORDIN_KIND}:별표{bno}:{zone}", "area_cd5": area_cd5,
+        rows.append({"chunk_id": f"{area_cd5}:{ORDIN_KIND}:별표{bno}", "area_cd5": area_cd5,
                      "sigungu_org": nm_, "ordin_name": nm_, "ordin_mst": mst_, "ordin_kind": ORDIN_KIND,
                      "chunk_type": "별표", "byeolpyo_no": bno, "byeolpyo_title": title[:120], "zone": zone,
                      "eff_date": None, "extract_method": method, "src_len": len(text), "body": text, "embedding": vec})

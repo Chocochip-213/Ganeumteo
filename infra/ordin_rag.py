@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """런타임 조례 RAG 조회. HIT→dict / MISS·DB-down·예외→None(절대 raise 안 함 → live fallback).
 검수: zone-None 임베딩오염 가드(#1) · zone 정확매칭+임베딩 tiebreak(메타지배 정직 #14) · ordin_kind/chunk_type 필터(#3) · 거리임계 · numpy 쿼리벡터."""
+import re
 import numpy as np
 from infra.embed import embed_one
 from infra import db
@@ -35,12 +36,16 @@ def lookup_ordin(sigungu, zone, area_cd=""):
             scope, sp = "area_cd5=%s", [acd]
         else:
             scope, sp = "sigungu_org LIKE %s", [f"%{sig}%"]
+        # zone 정확매칭 → 안 되면 core(제N종 제거) 매칭. 둘 다 실패면 MISS(위험한 임베딩-only 폴백 없음)
+        z_core = re.sub(r"제\s*\d+\s*종\s*", "", z).strip()
+        zone_tries = [f"%{z}%"]
+        if z_core and z_core != z:
+            zone_tries.append(f"%{z_core}%")
         with db.connect(timeout=3) as c:
             row = None
-            # 1차: zone 정확매칭(메타 지배 — 올바른 별표 결정적 선택)
-            for zf, zp in ((" AND zone LIKE %s", [f"%{z}%"]), ("", [])):
-                q = _SQL.format(scope=scope, zonef=zf)
-                row = c.execute(q, [qv, *sp, *zp, qv]).fetchone()
+            for zp in zone_tries:
+                q = _SQL.format(scope=scope, zonef=" AND zone LIKE %s")
+                row = c.execute(q, [qv, *sp, zp, qv]).fetchone()
                 if row:
                     break
         if not row:
