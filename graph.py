@@ -40,7 +40,16 @@ def route_after_agent(state):
     last = state["messages"][-1]
     if getattr(last, "tool_calls", None):
         return "tools"
+    if not state.get("_toolcalls") and str(getattr(last, "content", "") or "").strip():
+        return "chat_end"   # 클로드식 트리아지: 첫 턴 도구 0 + 텍스트만 = 대화(진단 아님). 휴리스틱 0 — tool_use 방출 여부로만
     return "completeness_guard"
+
+
+def chat_end(state):
+    """대화 종료 — 에이전트가 도구 없이 텍스트로 답하면(인사·잡담·되물음) 그 텍스트 그대로 반환(진단 카드 없음)."""
+    last = state["messages"][-1]
+    return {"terminal_reason": "chat",
+            "_return": {"status": "대화", "chat": str(getattr(last, "content", "") or "").strip()}}
 
 
 def completeness_guard(state):
@@ -210,15 +219,17 @@ def build_graph():
     b.add_node("compose", compose)
     b.add_node("finalize", finalize)
     b.add_node("abstain", abstain)
+    b.add_node("chat_end", chat_end)
     b.add_edge(START, "agent")
     b.add_conditional_edges("agent", route_after_agent,
-                            {"tools": "tools", "completeness_guard": "completeness_guard", "abstain": "abstain"})
+                            {"tools": "tools", "completeness_guard": "completeness_guard", "abstain": "abstain", "chat_end": "chat_end"})
     b.add_edge("tools", "agent")
     b.add_conditional_edges("completeness_guard", route_after_guard,
                             {"agent": "agent", "build_reasoning": "build_reasoning", "abstain": "abstain"})
     b.add_edge("build_reasoning", "compose")
     b.add_edge("compose", "finalize")
     b.add_edge("abstain", "finalize")
+    b.add_edge("chat_end", END)
     b.add_edge("finalize", END)
     from langgraph.checkpoint.memory import MemorySaver
     return b.compile(checkpointer=MemorySaver()), mode   # H3: interrupt(HITL) 가능하게
