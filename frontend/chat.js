@@ -541,11 +541,10 @@ function handleTraceEvent(c, ev, think) {
 }
 function _q(s, n) { s = String(s == null ? "" : s).replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n) + "…" : s; }
 
-function runDiagnoseStream(url) {
+function runDiagnoseStream(url, followup) {
   const c = S.active;
   if (_es) { try { _es.close(); } catch (e) {} _es = null; }
-  c.trace = [];          // 재진단 시 이전 플로우 비움
-  c.result = null;
+  if (!followup) { c.trace = []; c.result = null; }   // 후속질문이면 기존 진단 결과·트레이스 유지
   c._streaming = true;   // 진행중 표시 — 다른 방 갔다 와도 openConvo가 '분석 중' 복원
   const think = makeThinking();
   c._think = think;
@@ -556,13 +555,13 @@ function runDiagnoseStream(url) {
     const k = ev && ev.kind;
     if (!k) return;
     if (k === "interrupt") { try { es.close(); } catch (_) {} _es = null; showInterrupt(ev.detail, think); return; }
-    if (k === "done") { try { es.close(); } catch (_) {} _es = null; pushTrace(c, ev); fetchResult(c, think); return; }
+    if (k === "done") { try { es.close(); } catch (_) {} _es = null; pushTrace(c, ev); fetchResult(c, think, followup); return; }
     handleTraceEvent(c, ev, think);
   };
   es.onerror = () => {
     if (_es) { try { _es.close(); } catch (_) {} _es = null; }
     // 결과가 이미 받아졌으면 표시, 아니면 안내
-    if (c.threadId) fetchResult(c, think);
+    if (c.threadId) fetchResult(c, think, followup);
     else { think.remove(); aiSay("진단 연결이 끊어졌어요. 잠시 후 ‘주소 변경’으로 다시 시도하거나 입력을 확인해 주세요.", 400); }
   };
 }
@@ -602,14 +601,13 @@ function resumeStream(url, think) {
 // ============================================================
 //  결과 fetch → verdict-card + doc-cards
 // ============================================================
-async function fetchResult(c, think) {
+async function fetchResult(c, think, followup) {
   if (!c || !c.threadId) { if (think) think.remove(); return; }
   let j;
   try {
     const r = await fetch("/diagnose/result?thread_id=" + encodeURIComponent(c.threadId));
     j = await r.json();
   } catch (e) { if (think) think.remove(); await aiSay("결과를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.", 400); return; }
-  c.result = j;
   c._streaming = false;                 // 진행 종료
   const live = (c === S.active);         // 지금 이 방을 보고 있나 — DOM 갱신은 이때만
   const _ret = j._return || {};
@@ -617,11 +615,12 @@ async function fetchResult(c, think) {
     if (think) think.remove();
     const chatHtml = mdLite(_ret.chat || "무엇을 어디에 짓고 싶으신지 알려주세요.");
     c.msgs.push({ role: "ai", html: chatHtml });
-    c.use_type = ""; c.result = null;   // 용도 미확정·진단결과 아님 → 다음 입력이 새 진단
+    if (!followup) { c.use_type = ""; c.result = null; }   // 후속질문이면 기존 진단 결과 유지(질문 답만 추가)
     persist();
     if (live) { if (think && think.wrap && think.wrap.isConnected) { appendRaw({ role: "ai", html: chatHtml }); scrollBottom(); wireTerms(); } else renderMsgs(c); }
     return;
   }
+  c.result = j;                         // 실제 진단 결과만 c.result 갱신(대화는 위에서 return → 후속질문 시 기존 카드 유지)
   // 입지 메타 반영(state는 항상)
   if (j.zone) c.loc.zone = j.zone;
   if (j.jimok) c.loc.jimok = j.jimok;
@@ -1075,9 +1074,8 @@ function docStageCard(d, num) {
 async function freeReply(text) {
   const c = S.active;
   // HITL 대기 중이면 — 자유텍스트 답을 resume로(에이전트 LLM이 면적·층수 등 해석). 중단어면 reject.
-  if (c._hitl) {
+  if (c._hitl) {                                  // submit이 이미 pushUser함 → 여기선 중복 push 안 함
     const tid = c._hitl.thread_id, think = c._hitl.think; c._hitl = null;
-    pushUser(text);
     const stop = /^\s*(중단|취소|그만|중지|stop)\s*$/i.test(text);
     const qs = new URLSearchParams({ thread_id: tid });
     if (stop) qs.set("reject", "true"); else qs.set("answer", text);
@@ -1086,7 +1084,12 @@ async function freeReply(text) {
   }
   // 재진단 명령(이미 용도 있을 때) → 같은 용도로 다시
   if (c.use_type && /다시|재진단|새로|재검토|다시\s*해/.test(text)) { rediagnose(); return; }
-  // 그 외 모든 자유입력 = 그 텍스트를 (새) 용도로 진단 — 건축법 용도 해석은 에이전트가 ReAct로(캔드 응답·키워드 하드코딩 제거)
+  // 진단 완료 후 입력 = 후속질문 → 같은 thread로(에이전트가 컨텍스트 갖고 답하거나 재진단 판단). 새 진단 아님
+  if (c.threadId && c.result) {
+    runDiagnoseStream("/diagnose/followup?" + new URLSearchParams({ thread_id: c.threadId, message: text }).toString(), true);
+    return;
+  }
+  // 첫 진단 — 그 텍스트를 용도로(건축법 용도 해석은 에이전트가 ReAct)
   chooseUse(text, text, true);
 }
 

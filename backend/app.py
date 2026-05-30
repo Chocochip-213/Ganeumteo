@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from langchain_core.messages import HumanMessage
 from proto_bridge import GRAPH
 from state_init import fresh_state, make_config
 import sse
@@ -43,6 +44,15 @@ def diagnose_resume(thread_id: str, request: Request, reject: bool = False):
         # 에이전트가 요청한 임의 필드를 그대로 왕복(confirm_*, correct_* 등 — floor/use에 한정 안 함)
         resume = {k: v for k, v in request.query_params.items() if k not in ("thread_id", "reject")}
     return StreamingResponse(sse.run_stream(GRAPH, None, cfg, resume=resume),
+                             media_type="text/event-stream", headers=_SSE_HEADERS)
+
+
+@app.get("/diagnose/followup")
+def diagnose_followup(thread_id: str, message: str):
+    # 진단 완료 후 후속 대화 — 같은 thread에 사용자 메시지 추가 후 그래프 재호출.
+    # 에이전트가 기존 진단 컨텍스트(메시지 이력) 갖고 답(chat_end)하거나, 새 건물이면 재진단.
+    _, cfg = make_config(thread_id)
+    return StreamingResponse(sse.run_stream(GRAPH, {"messages": [HumanMessage(message)]}, cfg),
                              media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
