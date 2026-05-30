@@ -1005,7 +1005,9 @@ function orderedDocs(card) {
 function docCards(card) {
   const docs = orderedDocs(card);
   if (!docs.length) return `<div class="card card-pad"><div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 제출 서류</span></div><p style="font-size:14px;color:var(--fg-3);margin:6px 0 0">서류 단계가 산출되지 않았어요. 관할 기관(해당 시·군·구청 건축과)에 직접 문의가 필요해요.</p></div>`;
-  return docs.map((d, i) => docStageCard(d, i + 1)).join("");
+  const names = docs.map((d) => d.stage || d.stage_key).filter(Boolean);
+  const flow = `<div class="ds-flow">${I.route}<div><b>진행 순서</b> — ${esc(names.join(" → "))}<div class="ds-flow-d">한 번에 다 내는 게 아니라 <b>순서대로</b> 진행돼요. 앞 단계가 끝나야(허가·신고 수리·준공검사) 다음으로 넘어가고, 모두 <b>세움터</b>(건축행정시스템)에 제출해요. ‘설계도서(별표2)’는 그 한 항목 안에 배치도·평면도·입면도·구조도 등 도면 여러 종이 들어가요(실제 분량은 많음).</div></div></div>`;
+  return flow + docs.map((d, i) => docStageCard(d, i + 1)).join("");
 }
 
 function docStageCard(d, num) {
@@ -1020,8 +1022,8 @@ function docStageCard(d, num) {
     else { groups.push({ head: it, moks: [] }); }
   });
 
-  const formLink = (it, label) => it.form_hwp
-    ? `<a class="ds-form" href="${esc(it.form_hwp)}" target="_blank" rel="noreferrer" title="${esc(it.form_title || "")}">${I.down} ${label}</a>` : "";
+  const formLink = (it) => (it.form_hwp || it.form_pdf)   // 양식 다운로드: HWP·PDF 둘 다(고르게)
+    ? `<span class="ds-form" title="${esc(it.form_title || "")}">${I.down}<em>양식</em>${it.form_hwp ? `<a href="${esc(it.form_hwp)}" target="_blank" rel="noreferrer">HWP</a>` : ""}${it.form_pdf ? `<a href="${esc(it.form_pdf)}" target="_blank" rel="noreferrer">PDF</a>` : ""}</span>` : "";
   const groupHtml = (g) => {
     const h = g.head || {};
     const name = String(h.doc_name || "").trim();
@@ -1040,8 +1042,8 @@ function docStageCard(d, num) {
   const condHtml = cond.map(groupHtml).join("");
 
   // 주신청서 양식 = 이 단계에서 직접 받아 작성하는 핵심 서식 → 최상단 강조 다운로드
-  const applyHtml = (ok && d.apply_hwp)
-    ? `<a class="ds-apply" href="${esc(d.apply_hwp)}" target="_blank" rel="noreferrer">${I.down}<span>${esc(d.apply_title || "신청서")}<em>HWP 양식 받기</em></span></a>` : "";
+  const applyHtml = (ok && (d.apply_hwp || d.apply_pdf))
+    ? `<div class="ds-apply">${I.down}<span class="ds-apply-t">${esc(d.apply_title || "신청서")} 양식</span><span class="ds-apply-dl">${d.apply_hwp ? `<a href="${esc(d.apply_hwp)}" target="_blank" rel="noreferrer">HWP</a>` : ""}${d.apply_pdf ? `<a href="${esc(d.apply_pdf)}" target="_blank" rel="noreferrer">PDF</a>` : ""}</span></div>` : "";
 
   // 링크: 시행규칙 원문(law.go.kr) + 제출처 포털
   const lawLink = law ? `<a class="ds-link" href="${esc(lawURL(law))}" target="_blank" rel="noreferrer">${I.ext} 시행규칙 원문</a>` : "";
