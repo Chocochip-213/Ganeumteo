@@ -41,6 +41,22 @@ def _msg_attr(m, attr, default=None):
     return m.get(attr, default) if isinstance(m, dict) else getattr(m, attr, default)
 
 
+def _text_content(content):
+    """Responses API(gpt-5.2-pro)면 content가 list(text/function_call/reasoning 파트) — 텍스트만 추출.
+    Chat Completions면 str 그대로. 함수콜 dict가 '사고' 텍스트로 새는 것 차단."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for p in content:
+            if isinstance(p, str):
+                parts.append(p)
+            elif isinstance(p, dict) and p.get("type") in ("text", "output_text") and p.get("text"):
+                parts.append(str(p["text"]))
+        return " ".join(parts).strip()
+    return ""
+
+
 def _events(graph, state, cfg, resume=None):
     seq = 0
 
@@ -57,7 +73,7 @@ def _events(graph, state, cfg, resume=None):
             if node == "agent":
                 msgs = delta.get("messages") or []
                 last = msgs[-1] if msgs else None
-                content = _msg_attr(last, "content", "") if last is not None else ""
+                content = _text_content(_msg_attr(last, "content", "")) if last is not None else ""
                 tcs = _msg_attr(last, "tool_calls") if last is not None else None
                 # 사고(content)를 도구호출 앞에 먼저 노출(GPT/Claude Thinking식) — content와 tool_calls 둘 다
                 if content and str(content).strip():
