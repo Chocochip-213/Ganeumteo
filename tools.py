@@ -92,10 +92,9 @@ def get_land_price(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -
 def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
                 tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """행위제한 1차판정 + 조례위임 감지. data.go.kr 1613000.
-    입력: zone_ucode=get_land_use의 UQ코드 말단, use_type=용도, area_cd=get_parcel의 area_cd(PNU 앞5).
+    입력: zone_ucode=get_land_use의 UQ코드 말단. use_type=**건축법 용도분류상 시설명**(사용자 표현을 건축법 용도로 해석해 전달 — 예 카페→일반음식점, 사무실→업무시설, 다세대→공동주택. API가 이 시설명으로 행위제한 조회). area_cd=get_parcel의 area_cd(PNU 앞5).
     반환 act_verdict∈{가능(법령직접), 조례확인필요(혼재), 조례확인필요}. 빈값·혼재=조례위임(_delegated=True) → 단정 말고 ordin_byeolpyo_fetch로 진행."""
-    nm = "일반음식점" if "음식" in use_type or "카페" in use_type else use_type
-    rg = W.act(zone_ucode, nm, area_cd)
+    rg = W.act(zone_ucode, use_type, area_cd)   # 용도 해석은 LLM이(도구는 받은 시설명 그대로 조회 — 하드코딩 맵 제거)
     has_y, has_n = (rg and "가능" in rg), (rg and "금지" in rg)
     if has_y and not has_n:
         v, dele = "가능(법령직접)", False
@@ -107,7 +106,7 @@ def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
         v, dele = "조례확인필요", True         # 빈값=조례 위임
     return Command(update={"act_verdict": v, "act_reg_raw": rg, "_delegated": dele,
                            "_toolcalls": ["act_landuse"],
-                           "messages": [_tm(f"행위제한 {nm}@{zone_ucode}: REG_NM={rg or '빈값'} → {v}", tool_call_id)]})
+                           "messages": [_tm(f"행위제한 {use_type}@{zone_ucode}: REG_NM={rg or '빈값'} → {v}", tool_call_id)]})
 
 
 # ── 조례 별표 BodyText (멀티홉 1번째 홉) ─────────────────────
@@ -181,12 +180,17 @@ def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, I
 
 @tool
 def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """법령 별표 inline 텍스트(예: 건축법 시행령 별표1 용도별 건축물). 멀티홉 2홉(호목 해소)."""
+    """국가법령(본법/시행령/시행규칙)의 별표 inline 텍스트. 어느 법이든.
+    입력: law_name=법령명. 정식명이 안 맞으면 검색 후보 목록을 돌려주니, 그 중 맞는 정식명으로 다시 호출하라(여러 이름 시도 OK). byeolpyo_kw=별표 번호('1') 또는 제목 키워드('용도별','허용행위').
+    용도: 조례 별표가 가리킨 국가법령 별표 해소, 또는 행위제한이 특정 법령에 있을 때 그 법의 별표 직접 조회."""
     a = L.search(law_name, "law")["LawSearch"]["law"]
-    if isinstance(a, dict): a = [a]
-    cand = [x for x in a if x.get("법령명한글") == law_name]
-    if not cand:
-        return Command(update={"_toolcalls": ["law_byeolpyo_fetch"], "messages": [_tm(f"{law_name} 없음", tool_call_id)]})
+    rs = [x for x in (a if isinstance(a, list) else [a]) if isinstance(x, dict)]
+    cand = [x for x in rs if x.get("법령명한글") == law_name]
+    if not cand:   # 정확매칭 없음 → 후보를 LLM에 돌려줘 재시도 유도(직접 휴리스틱 매칭 안 함 — LLM이 고름)
+        names = [x.get("법령명한글", "") for x in rs[:6]]
+        msg = (f"EMPTY '{law_name}' 정확 매칭 없음. 검색된 법령 후보: {names}. 이 중 맞는 정식 법령명으로 다시 호출하라."
+               if names else f"FAIL '{law_name}' 검색 0건 → 법령명을 바꿔 다시 시도.")
+        return Command(update={"_toolcalls": ["law_byeolpyo_fetch"], "messages": [_tm(msg, tool_call_id)]})
     j = L.service(cand[0]["법령일련번호"], "law")
     bu = j["법령"].get("별표", {}).get("별표단위")
     bu = bu if isinstance(bu, list) else [bu]
