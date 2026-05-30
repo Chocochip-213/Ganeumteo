@@ -91,7 +91,9 @@ def get_land_price(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -
 @tool
 def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
                 tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """행위제한 1차판정 + 조례위임 감지. data.go.kr 1613000."""
+    """행위제한 1차판정 + 조례위임 감지. data.go.kr 1613000.
+    입력: zone_ucode=get_land_use의 UQ코드 말단, use_type=용도, area_cd=get_parcel의 area_cd(PNU 앞5).
+    반환 act_verdict∈{가능(법령직접), 조례확인필요(혼재), 조례확인필요}. 빈값·혼재=조례위임(_delegated=True) → 단정 말고 ordin_byeolpyo_fetch로 진행."""
     nm = "일반음식점" if "음식" in use_type or "카페" in use_type else use_type
     rg = W.act(zone_ucode, nm, area_cd)
     has_y, has_n = (rg and "가능" in rg), (rg and "금지" in rg)
@@ -205,7 +207,8 @@ def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[
 # ── 서류·규모·작성주체 ───────────────────────────────────────
 @tool
 def docs_for_stage(stage_key: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """단계별 시행규칙 첨부서류 호 전수(누락0). docs_for(stage)."""
+    """단계별 시행규칙 첨부서류 호 전수(누락0). docs_for(stage).
+    입력 stage_key: '건축허가'·'착공신고'·'사용승인' + record_uijae로 만든 의제 stage_key(농지전용/산지전용/개발행위/초지전용/사도개설)만. 'PNU'·'의제단계' 등 placeholder 금지."""
     r = DOC.docs_for(stage_key)
     if r["상태"] != "전수확보":
         return Command(update={"documents": [StageDocs(stage_key=stage_key, status="확인필요").model_dump()],
