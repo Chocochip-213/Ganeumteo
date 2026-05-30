@@ -97,17 +97,6 @@ def stub_plan(state):
     return AIMessage(content="조사 완료 — 도구 호출 종료")
 
 
-def _strip_reasoning(msg):
-    """Responses API reasoning item(rs_) 제거 — 무상태 GMS 프록시서 다음 턴 재전송 시 404(Item not found) 방지.
-    text·function_call 블록은 보존(매 턴 새로 추론하므로 품질 무손실)."""
-    if isinstance(getattr(msg, "content", None), list):
-        msg.content = [b for b in msg.content
-                       if not (isinstance(b, dict) and b.get("type") == "reasoning")]
-    if hasattr(msg, "additional_kwargs"):
-        msg.additional_kwargs.pop("reasoning", None)
-    return msg
-
-
 def make_agent_node():
     from dotenv import load_dotenv
     load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -116,15 +105,14 @@ def make_agent_node():
             return {"messages": [stub_plan(state)]}
         return agent_node, "stub-planner(강제)"
     gms = os.environ.get("GMS_KEY")
-    if gms:   # SSAFY GMS proxy — gpt-5.2-pro는 /responses 전용(/chat/completions 404), use_responses_api로 라우팅
+    if gms:   # SSAFY GMS proxy (OpenAI 호환) — gpt-5.2 (토큰 절약: pro 아님)
         from langchain_openai import ChatOpenAI
-        llm = ChatOpenAI(model="gpt-5.2-pro",
+        llm = ChatOpenAI(model="gpt-5.2",
                          base_url="https://gms.ssafy.io/gmsapi/api.openai.com/v1",
-                         api_key=gms, use_responses_api=True).bind_tools(TOOLS)   # temperature 미설정(gpt-5 기본만)
+                         api_key=gms).bind_tools(TOOLS)   # temperature 미설정(gpt-5 기본만 허용)
         def agent_node(state):
-            msg = _strip_reasoning(llm.invoke([("system", AGENT_SYSTEM)] + state["messages"]))
-            return {"messages": [msg]}
-        return agent_node, "LLM(GMS gpt-5.2-pro)"
+            return {"messages": [llm.invoke([("system", AGENT_SYSTEM)] + state["messages"])]}
+        return agent_node, "LLM(GMS gpt-5.2)"
     if os.environ.get("ANTHROPIC_API_KEY"):
         from langchain_anthropic import ChatAnthropic
         llm = ChatAnthropic(model="claude-haiku-4-5-20251001", temperature=0, max_tokens=2000).bind_tools(TOOLS)
