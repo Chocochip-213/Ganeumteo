@@ -7,7 +7,6 @@ from pydantic import Field
 from langchain_core.tools import tool, InjectedToolCallId
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
-import olefile
 
 sys.path.insert(0, r"C:\Users\kmw16\Desktop\agent\probe\research")
 import law_fetch as L            # search/service/ordin_search/ordin_service (실증)
@@ -136,38 +135,32 @@ def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
 def _ordin_bodytext(sigungu, zone):
     s = L.ordin_search(f"{sigungu} 도시계획")
     items = s.get("items") or []
-    cand = [it for it in items if "계획" in _S(it.get("자치법규명")) and sigungu in _S(it.get("자치법규명"))] or items
-    if not cand: return None, {}
-    mst = cand[0].get("자치법규일련번호") or cand[0].get("MST")
-    nm = _S(cand[0].get("자치법규명"))
-    j = L.ordin_service(mst)
-    bu = j.get("별표", {}).get("별표단위") or []
-    if isinstance(bu, dict): bu = [bu]
-    tgt = None
-    for b in bu:
-        ti = _S(b.get("별표제목"))
-        if zone in ti and ("건축할 수 있는" in ti or "건축할 수 없는" in ti):
-            tgt = b; break
-    if not tgt: return None, {"조례명": nm}
-    url = _S(tgt.get("별표첨부파일명"))
-    raw = None
-    for _ in range(4):
-        try:
-            raw = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Connection": "close"}), timeout=40).read(); break
-        except Exception:
-            time.sleep(1.5)
-    if not raw or raw[:4] != bytes.fromhex("d0cf11e0"): return None, {"조례명": nm, "별표": _S(tgt.get("별표번호"))}
-    try:
-        o = olefile.OleFileIO(io.BytesIO(raw))
-        try:
-            full = zlib.decompress(o.openstream("BodyText/Section0").read(), -15).decode("utf-16-le", "ignore")
-        except Exception:
-            full = o.openstream("PrvText").read().decode("utf-16-le", "ignore")
-        o.close()
-    except Exception:
-        return None, {"조례명": nm, "별표": _S(tgt.get("별표번호"))}
-    clean = re.sub(r"\s+", " ", re.sub(r"[^가-힣0-9().,ㆍ· ]", " ", full))
-    return clean, {"조례명": nm, "별표": _S(tgt.get("별표번호")) + " " + _S(tgt.get("별표제목"))[:30]}
+    last_nm = ""
+    for it in items:                                   # 후보 조례 순회 — 이름매칭 아니라 'zone 별표 가진 조례'를 고름(일반)
+        nm = _S(it.get("자치법규명"))
+        if sigungu not in nm:                           # 다른 지자체 배제(입력기반 일반규칙)
+            continue
+        last_nm = nm
+        j = L.ordin_service(it.get("자치법규일련번호") or it.get("MST"))
+        bu = j.get("별표", {}).get("별표단위") or []
+        if isinstance(bu, dict): bu = [bu]
+        tgt = next((b for b in bu if isinstance(b, dict) and zone in _S(b.get("별표제목"))
+                    and ("건축할 수 있는" in _S(b.get("별표제목")) or "건축할 수 없는" in _S(b.get("별표제목")))), None)
+        if not tgt:
+            continue                                    # 이 조례엔 해당 용도지역 별표 없음 → 다음 후보
+        url = _S(tgt.get("별표첨부파일명"))
+        raw = None
+        for _ in range(4):
+            try:
+                raw = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Connection": "close"}), timeout=40).read(); break
+            except Exception:
+                time.sleep(1.5)
+        full = L.byeolpyo_text(raw)                      # .hwp(PARA_TEXT 레코드)·.hwpx 자동 — 통째 utf-16 디코드 쓰레기 방지
+        if not full:
+            continue
+        clean = re.sub(r"\s+", " ", full).strip()
+        return clean, {"조례명": nm, "별표": _S(tgt.get("별표번호")) + " " + _S(tgt.get("별표제목"))[:30]}
+    return None, {"조례명": last_nm}
 
 
 @tool
