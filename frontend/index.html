@@ -1,38 +1,86 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>가늠터 — 건축 인허가 사전진단</title>
-  <link rel="stylesheet" href="./theme.css" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>가늠터 — AI 건축 인허가 사전검토</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link rel="stylesheet" href="./colors_and_type.css" />
+<link rel="stylesheet" href="./nav_app.css" />
+<style>
+  /* 신규 요소: 규모 입력폼 / 근거 배지 변형 — 디자인 토큰 재사용(nav_app.css 미수정) */
+  .scale-form .sf-row { display: flex; gap: 10px; margin: 10px 0 14px; flex-wrap: wrap; }
+  .scale-form .sf-field { flex: 1; min-width: 130px; display: flex; flex-direction: column; gap: 6px; }
+  .scale-form .sf-k { font-size: 12.5px; font-weight: 600; color: var(--fg-3); }
+  .scale-form .sf-field input { width: 100%; box-sizing: border-box; border: 1.5px solid var(--border-1); border-radius: 11px; padding: 11px 13px; font-size: 15.5px; font-weight: 600; font-family: var(--font-sans); color: var(--fg-1); background: var(--bg-surface); transition: border-color var(--t-fast) var(--ease-out); }
+  .scale-form .sf-field input:focus { outline: none; border-color: var(--sky-400); box-shadow: var(--ring-focus); }
+  .scale-form .sf-go { width: 100%; justify-content: center; }
+  .scale-form .sf-actions { display: flex; gap: 8px; }
+  .scale-form .sf-actions .sf-go { flex: 1; }
+  .scale-form .sf-actions .btn-soft { flex-shrink: 0; }
+  .think-step.dim { opacity: 0.7; font-size: 13.5px; }
+  .think-step.dim .tk { background: var(--sky-200); }
+  .verdict-card .bsrc.bsrc-none { color: oklch(0.45 0.14 25); background: var(--danger-bg); }
+  .verdict-card .bsrc.bsrc-site { color: var(--warm-fg); background: var(--warm-bg); }
+  .verdict-card .bsrc.bsrc-law { color: var(--sky-700); background: var(--sky-50); }
+  .verdict-card .cite-meta { font-size: 12px; color: var(--fg-3); margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-1); }
+  .verdict-card .basis-wrap .basis-item:last-child { border-bottom: none; }
+</style>
 </head>
 <body>
-  <header>
-    <div class="brand">가<span class="mk">늠</span>터</div>
-    <div class="sub">건축 인허가 AI 사전진단 · 주소만 넣으면 가부·서류·근거를 법령으로</div>
-    <div class="scope">demo · 경기남부 14개 시군 조례 인덱스</div>
-  </header>
+<div class="app">
 
-  <form id="in">
-    <div><label for="address">주소 (지번/도로명)</label><input id="address" value="경기도 양평군 양평읍 양근리 100" /></div>
-    <div><label for="use">용도</label><input id="use" value="카페" /></div>
-    <div><label for="area">연면적(㎡)</label><input id="area" value="264" inputmode="decimal" /></div>
-    <div><label for="floors">층수</label><input id="floors" value="1" inputmode="numeric" /></div>
-    <button id="go" type="submit">진단 시작</button>
-  </form>
+  <!-- 좌측 사이드바 -->
+  <aside class="sidebar">
+    <div class="sb-brand">
+      <div class="sb-mark"></div>
+      <div class="sb-title">가늠터<small>AI 건축 인허가 사전검토</small></div>
+    </div>
+    <button class="sb-new" id="newChat">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      새 상담 시작
+    </button>
+    <div class="sb-group">상담 기록</div>
+    <nav class="sb-list" id="convList"></nav>
+  </aside>
 
-  <main>
-    <section id="trace-pane">
-      <div class="pane-h">실행 트레이스 (에이전트 사고·도구 호출)</div>
-      <div id="trace"></div>
-    </section>
-    <section id="card-pane">
-      <div id="map"></div>
-      <div id="hitl-wrap"></div>
-      <div id="card"><p class="placeholder">주소·용도·규모를 넣고 <b>진단 시작</b>을 누르세요.<br>에이전트가 입지→행위제한→조례→서류→규모를 도구로 직접 조회합니다.</p></div>
-    </section>
+  <!-- 중앙 채팅 -->
+  <main class="main">
+    <div class="mbar">
+      <button class="mbar-btn" id="menuBtn" aria-label="메뉴 열기"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+      <div class="mbar-title" id="mbarTitle">가늠터</div>
+      <button class="mbar-btn hidden" id="mbarChange" aria-label="주소 변경"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></button>
+    </div>
+    <header class="chead hidden" id="chead">
+      <div class="addr"></div>
+      <button class="change" id="changeAddr">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        주소 변경
+      </button>
+    </header>
+
+    <div class="prail hidden" id="prail"></div>
+
+    <div class="scroll" id="scroll"></div>
+
+    <div class="composer-wrap hidden" id="composerWrap">
+      <div class="composer">
+        <div class="cmp-addr" id="cmpAddr"></div>
+        <div class="cmp-box">
+          <textarea id="cmpInput" rows="1" placeholder="예: 이 땅에 카페를 만들 수 있나요?"></textarea>
+          <button class="cmp-send" id="cmpSend" aria-label="전송" disabled>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+          </button>
+        </div>
+        <div class="cmp-hint">AI 사전 진단은 참고용이며, 최종 허가 여부는 관할 기관 확인이 필요합니다.</div>
+      </div>
+    </div>
   </main>
+</div>
 
-  <script type="module" src="./app.js"></script>
+<div class="scrim" id="scrim"></div>
+<div class="overlay" id="overlay"></div>
+
+<script type="module" src="./chat.js"></script>
 </body>
 </html>

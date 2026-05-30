@@ -1,0 +1,885 @@
+// =========================================================
+//  가늠터 상담실 — 챗 엔진 (실 백엔드 와이어링)
+//  온보딩 → 지도모달(카카오 지오코더) → 주소 확정 → 채팅
+//  quickActions → 연면적·층수 입력 → /diagnose/stream(SSE live think-card)
+//  → interrupt→/resume → done → /diagnose/result → verdict-card + doc-cards
+//  정직: 실 SSE/result만. 모르는 kind/결측키도 크래시 없이(데이터주도).
+// =========================================================
+import { classifyVerdict, statusKo } from "./verdict.js";
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const arr = (v) => (Array.isArray(v) ? v : []);
+const lawURL = (q) => "https://www.law.go.kr/법령/" + encodeURIComponent(q || "");
+
+// ── SVG 아이콘 (디자인 원본 재사용) ──
+const I = {
+  plus: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  pin: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+  send: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>',
+  search: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  cross: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg>',
+  x: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  arrow: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+  check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  file: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+  info: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  bang: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  go: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  cond: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="7" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  sparkle: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>',
+  ext: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+  chev: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
+  route: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>',
+  list: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
+  home: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+  swap: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+  extend: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V8l5-4v17"/><path d="M19 21V12l-9-4"/><line x1="16" y1="3" x2="22" y2="3"/></svg>',
+  coffee: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>',
+  brush: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/></svg>',
+  help: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+};
+const I_law = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M6 7l-3 6a3 3 0 0 0 6 0z"/><path d="M18 7l-3 6a3 3 0 0 0 6 0z"/><path d="M7 21h10"/></svg>';
+
+// ── 용어 사전 (popover) ──
+const GLOSSARY = {
+  "용도지역": ["용도지역", "땅마다 정해진 “쓰임새 등급”. 주거·상업·공업 등으로 나뉘고, 지을 수 있는 건물 종류와 크기가 달라져요."],
+  "지목": ["지목", "땅의 공식 용도 분류(대지·전·답·임야 등). “대(垈)”는 건물을 지을 수 있는 땅이에요."],
+  "도로접면": ["도로접면", "필지가 도로에 닿은 면. 도로에 접해야 건축이 가능하고, 폭·접면 길이에 따라 건축선·진입 조건이 달라져요."],
+  "건폐율": ["건폐율", "대지 면적 중 건물이 “바닥으로 덮는” 비율."],
+  "용적률": ["용적률", "대지 면적 대비 “모든 층 바닥을 합한” 비율. 건물을 얼마나 높이(층수) 올릴 수 있는지를 정해요."],
+  "근린생활시설": ["근린생활시설", "동네 주민이 자주 쓰는 생활편의 시설(가게·음식점·학원·의원 등) 분류예요."],
+  "용도변경": ["용도변경", "건물을 원래 쓰임새와 다른 용도로 바꾸는 것. 예) 사무실 → 카페는 용도변경이에요."],
+  "대수선": ["대수선", "건물의 기둥·보·내력벽 같은 “뼈대”를 크게 고치는 공사. 벽지·바닥만 바꾸는 인테리어는 해당하지 않아요."],
+  "의제처리": ["의제처리", "건축 허가 하나로 도로·하수도·농지전용 등 관련 인허가를 “함께 받은 것으로 쳐주는” 제도예요."],
+  "에너지절약계획서": ["에너지절약계획서", "일정 규모(연면적 500㎡ 이상 등) 건물에 요구되는, 단열·설비 등 에너지 성능 계획 서류예요."],
+  "구조안전확인서": ["구조안전확인서", "건물이 자기 무게·바람·지진을 안전하게 견디는지 확인하는 서류. 연면적 200㎡ 이상이나 2층 이상이면 보통 필요해요."],
+};
+function T(key, label) { const g = GLOSSARY[key]; return `<span class="term" data-term="${esc(key)}">${esc(label || (g ? g[0] : key))}</span>`; }
+// GLOSSARY에 있는 토큰이면 용어 span, 아니면 esc
+function maybeTerm(text) { return GLOSSARY[text] ? T(text) : esc(text); }
+
+// ── 채팅 추천 액션 (의도 → use_type) ──
+const ACTIONS = [
+  { t: "새 건물을 짓고 싶어요", d: "신축 — 주택·상가 등", use: "근린생활시설", ic: "home" },
+  { t: "단독주택을 짓고 싶어요", d: "신축 — 단독주택", use: "단독주택", ic: "home" },
+  { t: "근린생활시설을 짓고 싶어요", d: "신축 — 상가·점포", use: "근린생활시설", ic: "home" },
+  { t: "카페·음식점을 하고 싶어요", d: "신축/용도변경 — 카페", use: "카페", ic: "coffee" },
+  { t: "기존 건물을 다른 용도로 바꾸고 싶어요", d: "용도변경", use: "용도변경", ic: "swap" },
+  { t: "증축이 가능한지 알고 싶어요", d: "증축·대수선", use: "증축", ic: "extend" },
+];
+
+// ── 진행레일 (실제 4단계) ──
+const STAGES = ["주소", "건축물", "AI 진단", "필요 서류"];
+
+// ── STATE ──
+const S = { convos: [], active: null, picked: null, kakao: false, kakaoKey: null };
+const LS_KEY = "ganeomteo.convos";
+
+const scroll = () => $("#scroll");
+const msgs = () => $("#msgs");
+function scrollBottom() { requestAnimationFrame(() => { const s = scroll(); if (s) s.scrollTop = s.scrollHeight; }); }
+
+// ============================================================
+//  상담기록 영속 (localStorage; 메시지 HTML은 휘발 — 메타만 저장)
+// ============================================================
+function persist() {
+  try {
+    const slim = S.convos.map((c) => ({ loc: c.loc, use_type: c.use_type, stage: c.stage, ts: c.ts }));
+    localStorage.setItem(LS_KEY, JSON.stringify(slim));
+  } catch (e) { /* 저장 실패 무시 */ }
+}
+function restore() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const slim = JSON.parse(raw);
+    if (Array.isArray(slim)) S.convos = slim.map((c) => ({ ...c, msgs: [], restored: true }));
+  } catch (e) { S.convos = []; }
+}
+
+// ============================================================
+//  사이드바 / 온보딩
+// ============================================================
+function renderSidebar() {
+  const list = $("#convList");
+  if (!list) return;
+  if (!S.convos.length) { list.innerHTML = '<div class="sb-empty">아직 상담이 없어요.<br>‘새 상담 시작’을 눌러 땅 주소를 선택하면 상담이 만들어집니다.</div>'; return; }
+  list.innerHTML = "";
+  S.convos.forEach((c) => {
+    const it = el("button", "sb-item" + (c === S.active ? " active" : "") + (c._new ? " just-added" : ""));
+    const st = c.stage != null ? c.stage : 0;
+    const pct = Math.round((Math.min(st, STAGES.length - 1) / (STAGES.length - 1)) * 100);
+    const complete = st >= STAGES.length - 1;
+    const label = complete ? "진단 완료" : (STAGES[st + 1] || STAGES[st] || "") + " 진행 중";
+    it.innerHTML = `<span class="pin">${I.pin}</span><span class="meta"><span class="ttl">${esc(c.loc.address)}</span><span class="zone">${esc(c.loc.zone || "용도지역 확인 전")} · ${esc(c.loc.jimok || "지목 확인 전")}</span>`
+      + `<span class="sb-prog"><span class="sb-bar"><span style="width:${pct}%"></span></span><span class="sb-stage${complete ? " done" : ""}">${complete ? I.check + " 진단 완료" : esc(label)}</span></span></span>`;
+    it.onclick = () => openConvo(c);
+    list.appendChild(it);
+    c._new = false;
+  });
+}
+
+function showOnboard() {
+  S.active = null;
+  const mt = $("#mbarTitle"); if (mt) mt.textContent = "가늠터";
+  $("#mbarChange") && $("#mbarChange").classList.add("hidden");
+  $("#chead").classList.add("hidden");
+  $("#composerWrap").classList.add("hidden");
+  $("#prail") && $("#prail").classList.add("hidden");
+  scroll().innerHTML = `
+    <div class="onboard">
+      <div class="ob-grid"></div>
+      <div class="ob-inner">
+        <div class="ob-badge st1"><span class="dot"></span>가늠터 · AI 사전검토</div>
+        <div class="ob-mark st2"><div class="ring"></div><div class="core"><img src="assets/ganeumi-wave.png" alt="가늠이" class="ob-char" /></div></div>
+        <h1 class="st3">안녕하세요, 가늠이예요!<br><span class="em">땅 주소만 알려주세요</span></h1>
+        <p class="st4">가늠터는 <b>주소를 기준으로</b> 건축 인허가를 미리 가늠해 드려요.<br>먼저 지도에서 땅을 고르면, <br>제가 가능 여부부터 필요한 서류까지 안내할게요.</p>
+        <div class="ob-journey st5">
+          <div class="ob-jstep"><div class="jn">${I.pin}</div><div class="jt">지도에서<br>주소 선택</div></div>
+          <div class="ob-jconn"></div>
+          <div class="ob-jstep"><div class="jn">${I.home}</div><div class="jt">건축물·규모<br>입력</div></div>
+          <div class="ob-jconn"></div>
+          <div class="ob-jstep"><div class="jn">${I.sparkle.replace('width="14" height="14"', 'width="20" height="20"')}</div><div class="jt">AI 진단<br>·필요 서류</div></div>
+        </div>
+        <button class="ob-cta st6" id="obStart">${I.plus} 새 상담 시작하기</button>
+      </div>
+    </div>`;
+  $("#obStart").onclick = openMap;
+  renderSidebar();
+}
+
+// ============================================================
+//  지도 모달 (카카오 지오코더 — /config 키, 실패 시 폴백 스타일지도)
+// ============================================================
+function mapBlocks() {
+  const b = [[6, 8, 24, 30], [6, 52, 24, 16], [6, 80, 30, 14], [44, 6, 20, 32], [44, 78, 22, 16], [68, 52, 26, 30], [68, 80, 26, 12]];
+  return "<div>" + b.map(([l, t, w, h]) => `<div class="map-block" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%"></div>`).join("") + "</div>";
+}
+function openMap() {
+  S.picked = null;
+  const ov = $("#overlay");
+  ov.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div><div class="mh-t">상담할 땅을 선택해 주세요</div><div class="mh-s">선택한 주소의 규제를 기준으로 AI가 상담해 드려요</div></div>
+        <button class="mh-x" id="mapClose" aria-label="닫기">${I.x}</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-map">
+          <div class="map-canvas" id="mapCanvas">
+            <div class="map-ground"></div>
+            ${mapBlocks()}
+            <div class="map-road major" style="left:0;right:0;top:46%;height:24px"></div>
+            <div class="map-road" style="left:38%;top:0;bottom:0;width:16px"></div>
+            <div class="map-park" style="left:70%;top:12%;width:20%;height:22%"></div>
+            <div class="map-park-label" style="left:72%;top:34%">근린공원</div>
+            <div class="map-pin hidden" id="mapPin"><svg width="32" height="42" viewBox="0 0 24 30" fill="var(--sky-500)" stroke="#fff" stroke-width="1.5"><path d="M12 1C6.5 1 2 5.5 2 11c0 7 10 18 10 18s10-11 10-18c0-5.5-4.5-10-10-10z"/><circle cx="12" cy="11" r="3.6" fill="#fff" stroke="none"/></svg><div class="ping"></div></div>
+            <div class="map-hint">${I.cross} 지도를 클릭해 위치를 선택하세요</div>
+          </div>
+        </div>
+        <div class="modal-side">
+          <div class="m-search">
+            <div class="si">${I.search}<input id="addrInput" placeholder="도로명·지번 주소 검색" autocomplete="off" /></div>
+            <div class="m-suggest hidden" id="suggest"></div>
+          </div>
+          <button class="m-here" id="hereBtn">${I.cross} 현재 위치로 찾기</button>
+          <div class="m-summary" id="mSummary">
+            <div class="m-empty"><svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><div style="font-size:14.5px;font-weight:600">위치를 선택해 주세요</div><div style="font-size:13px;margin-top:3px">지도 클릭 · 주소 검색 · 현재 위치</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-soft" id="mapCancel">취소</button>
+        <button class="btn btn-primary" id="mapConfirm" disabled>이 주소로 상담 시작 ${I.arrow}</button>
+      </div>
+    </div>`;
+  ov.classList.add("show");
+
+  // 폴백 스타일지도 인터랙션 (카카오 미로드 시)
+  const canvas = $("#mapCanvas"), pin = $("#mapPin");
+  const place = (x, y) => { pin.style.left = Math.max(6, Math.min(94, x)) + "%"; pin.style.top = Math.max(12, Math.min(92, y)) + "%"; pin.classList.remove("hidden"); };
+  canvas.onclick = (e) => { const r = canvas.getBoundingClientRect(); place((e.clientX - r.left) / r.width * 100, (e.clientY - r.top) / r.height * 100); pickFallback(); };
+  $("#hereBtn").onclick = () => { place(52, 50); pickFallback(); };
+  const inp = $("#addrInput");
+  inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); const v = inp.value.trim(); if (v) { place(46, 48); pickReal(v, ""); } } };
+
+  $("#mapClose").onclick = $("#mapCancel").onclick = closeMap;
+  $("#mapConfirm").onclick = confirmMap;
+  initKakaoMap();
+}
+
+// 폴백: 주소를 직접 못 받는 경우 — 사용자에게 입력 안내(가짜 주소 금지)
+function pickFallback() {
+  $("#mSummary").innerHTML = `
+    <div class="m-card">
+      <div class="mc-pin">${I.pin} 위치 선택됨</div>
+      <div class="mc-addr">주소를 직접 입력해 주세요</div>
+      <div class="mc-road">지도 SDK를 불러오지 못해 좌표→주소 변환을 할 수 없어요. 위 검색창에 도로명·지번 주소를 입력하고 Enter를 눌러주세요.</div>
+    </div>`;
+  $("#mapConfirm").disabled = true;
+}
+
+function pickReal(addr, road) {
+  S.picked = { address: addr, road: road || "" };
+  $("#mSummary").innerHTML = `
+    <div class="m-card">
+      <div class="mc-pin">${I.pin} 선택한 위치</div>
+      <div class="mc-addr">${esc(addr)}</div>
+      <div class="mc-road">${road ? "도로명 " + esc(road) : "지번/도로명 주소"}</div>
+      <div class="m-regs"><div class="mr-h">${I.info} 이 주소로 상담을 시작하면, 가늠이가 입지·규제를 실시간으로 조회해요.</div></div>
+    </div>`;
+  $("#mapConfirm").disabled = false;
+}
+
+function initKakaoMap() {
+  if (!(window.kakao && window.kakao.maps && kakao.maps.load)) return; // SDK 미로드 → 폴백 유지
+  try {
+    kakao.maps.load(function () {
+      try {
+        const canvas = document.getElementById("mapCanvas");
+        if (!canvas || !kakao.maps.services) return;
+        canvas.onclick = null;
+        canvas.innerHTML = "";
+        canvas.style.cursor = "default";
+        const center = new kakao.maps.LatLng(37.5112, 127.0327);
+        const map = new kakao.maps.Map(canvas, { center: center, level: 3 });
+        const geocoder = new kakao.maps.services.Geocoder();
+        const marker = new kakao.maps.Marker({ map: map, position: center });
+        marker.setMap(null);
+        const hint = document.createElement("div");
+        hint.className = "map-hint"; hint.innerHTML = I.cross + " 지도를 클릭해 위치를 선택하세요";
+        canvas.appendChild(hint);
+
+        function setFromCoord(latlng) {
+          marker.setPosition(latlng); marker.setMap(map);
+          geocoder.coord2Address(latlng.getLng(), latlng.getLat(), function (res, status) {
+            if (status === kakao.maps.services.Status.OK && res[0]) {
+              const r = res[0];
+              const jibun = r.address ? r.address.address_name : "";
+              const road = r.road_address ? r.road_address.address_name : "";
+              pickReal(jibun || road, road || jibun);
+            } else { pickFallback(); }
+          });
+        }
+        kakao.maps.event.addListener(map, "click", function (e) { setFromCoord(e.latLng); });
+
+        const inp = document.getElementById("addrInput"), sg = document.getElementById("suggest");
+        inp.onkeydown = null;
+        const runSearch = (q) => {
+          if (!q) { sg.classList.add("hidden"); return; }
+          geocoder.addressSearch(q, function (res, status) {
+            if (status === kakao.maps.services.Status.OK && res.length) {
+              sg.innerHTML = res.slice(0, 5).map((d, i) => `<button type="button" data-i="${i}">${I.pin}${esc(d.road_address ? d.road_address.address_name : d.address_name)}</button>`).join("");
+              sg.classList.remove("hidden");
+              $$("button", sg).forEach((b) => b.onclick = () => {
+                const d = res[+b.dataset.i]; const ll = new kakao.maps.LatLng(d.y, d.x);
+                map.setCenter(ll); marker.setPosition(ll); marker.setMap(map);
+                sg.classList.add("hidden"); inp.value = b.textContent.trim();
+                pickReal(d.address_name, d.road_address ? d.road_address.address_name : "");
+              });
+            } else { sg.classList.add("hidden"); }
+          });
+        };
+        let t; inp.oninput = () => { clearTimeout(t); t = setTimeout(() => runSearch(inp.value.trim()), 300); };
+        inp.onkeydown = (ev) => { if (ev.key === "Enter") { ev.preventDefault(); runSearch(inp.value.trim()); } };
+        const here = document.getElementById("hereBtn");
+        here.onclick = () => {
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              (p) => { const ll = new kakao.maps.LatLng(p.coords.latitude, p.coords.longitude); map.setCenter(ll); setFromCoord(ll); },
+              () => setFromCoord(center));
+          } else setFromCoord(center);
+        };
+        S.kakao = true;
+        window.__kmap = map;
+      } catch (e) { /* 인증·도메인 실패 → 폴백 지도 유지 */ }
+    });
+  } catch (e) { /* 폴백 유지 */ }
+}
+
+function closeMap() { $("#overlay").classList.remove("show"); setTimeout(() => { $("#overlay").innerHTML = ""; }, 240); }
+function confirmMap() { if (!S.picked) return; const loc = { address: S.picked.address, road: S.picked.road, jimok: "", zone: "" }; closeMap(); createConvo(loc); }
+
+// ============================================================
+//  채팅방 생성 / 열기
+// ============================================================
+function createConvo(loc) {
+  const c = { loc, msgs: [], use_type: null, threadId: null, _new: true, started: false, stage: 0, ts: Date.now(), result: null };
+  S.convos.unshift(c);
+  openConvo(c);
+  persist();
+  startConsult(c);
+}
+function openConvo(c) {
+  S.active = c;
+  $("#chead").classList.remove("hidden");
+  $("#composerWrap").classList.remove("hidden");
+  const L = c.loc;
+  const sub = [L.zone, L.jimok].filter(Boolean);
+  $("#chead").querySelector(".addr").innerHTML = `<div class="ac-ic">${I.pin}</div><div><div class="ac-t">${esc(L.address)}</div><div class="ac-s">${sub.length ? sub.map((x) => `<span>${esc(x)}</span>`).join('<span class="dotsep">·</span>') : '<span>입지·규제는 진단 중 조회돼요</span>'}</div></div>`;
+  $("#cmpAddr").innerHTML = `${I.pin} ${esc(L.address)} 기준으로 상담 중`;
+  const mt = $("#mbarTitle"); if (mt) mt.textContent = L.address;
+  $("#mbarChange") && $("#mbarChange").classList.remove("hidden");
+  if (window.__closeDrawer) window.__closeDrawer();
+  scroll().innerHTML = '<div class="msgs" id="msgs"></div>';
+  c.msgs.forEach((m) => appendRaw(m));
+  setStage(c.stage != null ? c.stage : 0);
+  // 복원된(메시지 없는) 상담을 열면 결과만 다시 표시 시도
+  if (c.restored && !c.msgs.length) {
+    msgs().innerHTML = `<div class="msg ai"><div class="av"></div><div class="col"><div class="who">가늠이</div><div class="bubble">이전 상담 기록이에요. 같은 주소로 다시 진단하려면 아래에 건축 행위를 입력하거나 ‘주소 변경’으로 새 상담을 시작하세요.</div></div></div>`;
+    if (c.use_type) { pushAINode(quickActions()); }
+  }
+  renderSidebar();
+  wireTerms();
+  scrollBottom();
+}
+
+// ============================================================
+//  메시지 헬퍼
+// ============================================================
+function appendRaw(m) {
+  if (!msgs()) return;
+  if (m.role === "node") { msgs().insertAdjacentHTML("beforeend", `<div class="msg ai"><div class="av"></div><div class="col"><div class="who">가늠이</div>${m.html}</div></div>`); wireDynamic(); return; }
+  const cls = m.role === "user" ? "user" : "ai";
+  msgs().insertAdjacentHTML("beforeend", `<div class="msg ${cls}"><div class="av">${cls === "user" ? "나" : ""}</div><div class="col"><div class="who">${cls === "user" ? "나" : "가늠이"}</div><div class="bubble">${m.html}</div></div></div>`);
+}
+function pushUser(text) { const m = { role: "user", html: esc(text) }; S.active.msgs.push(m); appendRaw(m); scrollBottom(); }
+function pushAINode(html) { const m = { role: "node", html }; S.active.msgs.push(m); appendRaw(m); scrollBottom(); wireTerms(); }
+async function aiSay(html, delay = 600) {
+  const wrap = el("div", "msg ai");
+  wrap.innerHTML = `<div class="av"></div><div class="col"><div class="who">가늠이</div><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div></div>`;
+  msgs().appendChild(wrap); scrollBottom();
+  await wait(delay);
+  wrap.querySelector(".bubble").innerHTML = html;
+  S.active.msgs.push({ role: "ai", html });
+  scrollBottom(); wireTerms();
+}
+
+// ============================================================
+//  진행레일
+// ============================================================
+function renderRail() {
+  const r = $("#prail"); if (!r) return;
+  r.innerHTML = `<div class="prail-inner">${STAGES.map((s, i) => `<div class="pstep${i === STAGES.length - 1 ? " final" : ""}" data-i="${i}"><span class="pdot">${i === STAGES.length - 1 ? I.check : (i + 1)}</span><span class="pname">${esc(s)}</span></div>`).join('<span class="pline"></span>')}</div>`;
+}
+function setStage(idx) {
+  if (S.active) { S.active.stage = idx; persist(); }
+  const r = $("#prail"); if (!r) return;
+  r.classList.remove("hidden");
+  const steps = $$(".pstep", r), lines = $$(".pline", r);
+  const last = STAGES.length - 1;
+  steps.forEach((s, i) => {
+    const isFinalReached = i === last && idx >= last;
+    s.classList.toggle("done", i < idx || isFinalReached);
+    s.classList.toggle("active", i === idx && !isFinalReached);
+  });
+  lines.forEach((l, i) => l.classList.toggle("done", i < idx));
+  renderSidebar();
+}
+
+// ============================================================
+//  상담 흐름
+// ============================================================
+async function startConsult(c) {
+  c.started = true;
+  setStage(0);
+  await wait(300);
+  await aiSay(`<b>${esc(c.loc.address)}</b> 기준으로 인허가 상담을 시작할게요.<br>이 땅에서 어떤 건축 행위를 검토하고 계신가요? 아래에서 고르거나 직접 입력해 주세요.`, 700);
+  pushAINode(quickActions());
+}
+function quickActions() {
+  return `<div class="qa-wrap" data-role="qa">${ACTIONS.map((a) => `<button class="qa" data-use="${esc(a.use)}" data-name="${esc(a.t)}"><span class="qi">${I[a.ic] || I.home}</span><span><span style="display:block;font-weight:700">${esc(a.t)}</span><span class="qd">${esc(a.d)}</span></span><span class="qg">${I.arrow}</span></button>`).join("")}</div>`;
+}
+
+// 건축 행위 선택 → 연면적·층수 인라인 입력
+async function chooseUse(useType, name, skipPush) {
+  $$('[data-role="qa"]').forEach((n) => { const m = n.closest(".msg"); (m || n).remove(); });
+  if (S.active.msgs) S.active.msgs = S.active.msgs.filter((m) => !(m.role === "node" && /data-role="qa"/.test(m.html)));
+  S.active.use_type = useType; persist();
+  if (!skipPush) pushUser(name);
+  setStage(1);
+  await wait(150);
+  await aiSay(`좋아요. 규모를 알려주시면 더 정확히 진단할 수 있어요.<br><b>연면적(㎡)</b>과 <b>층수</b>를 입력해 주세요.`, 600);
+  pushAINode(scaleForm());
+}
+function scaleForm() {
+  return `<div class="card card-pad scale-form" data-role="scale">
+    <div class="card-h" style="padding:0 0 4px">${I.home} 건축 규모 입력</div>
+    <div class="sf-row">
+      <label class="sf-field"><span class="sf-k">연면적 (㎡)</span><input type="number" inputmode="decimal" id="sfArea" placeholder="예: 264" min="0" step="any" /></label>
+      <label class="sf-field"><span class="sf-k">층수</span><input type="number" inputmode="numeric" id="sfFloors" placeholder="예: 2" min="1" step="1" /></label>
+    </div>
+    <button class="btn btn-primary sf-go" id="sfGo">이 조건으로 진단 시작 ${I.arrow}</button>
+  </div>`;
+}
+
+// 진단 시작 (연면적·층수 확정 후)
+function beginDiagnose(area, floors) {
+  const c = S.active;
+  $$('[data-role="scale"]').forEach((n) => { const m = n.closest(".msg"); (m || n).remove(); });
+  if (c.msgs) c.msgs = c.msgs.filter((m) => !(m.role === "node" && /data-role="scale"/.test(m.html)));
+  c.floor_area = area; c.floor_count = floors;
+  pushUser(`연면적 ${area}㎡ · ${floors}층`);
+  setStage(2);
+  const qs = new URLSearchParams({ address: c.loc.address, use_type: c.use_type || "근린생활시설", floor_area: String(area), floor_count: String(floors) });
+  runDiagnoseStream("/diagnose/stream?" + qs.toString());
+}
+
+// ============================================================
+//  진단 스트림 (실 SSE → live think-card)
+// ============================================================
+let _es = null;
+function runDiagnoseStream(url) {
+  const c = S.active;
+  if (_es) { try { _es.close(); } catch (e) {} _es = null; }
+  // live think-card 생성
+  const wrap = el("div", "msg ai"); wrap.innerHTML = `<div class="av"></div><div class="col"><div class="who">가늠이</div></div>`;
+  const card = el("div", "card think-card");
+  card.innerHTML = `<div class="think-h"><span class="think-spin"></span><span class="th-t">인허가 조건을 검토하고 있어요</span><span class="th-state">분석 중</span></div><div class="think-steps" id="thinkSteps"></div>`;
+  wrap.querySelector(".col").appendChild(card); msgs().appendChild(wrap); scrollBottom();
+  const stepsBox = card.querySelector("#thinkSteps");
+  stepsBox.removeAttribute("id");
+  const seen = new Set();
+  const addStep = (label, dim) => {
+    if (!label) return;
+    const key = String(label);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const s = el("div", "think-step on" + (dim ? " dim" : ""), `<span class="tk">${I.check}</span>${esc(label)}`);
+    stepsBox.appendChild(s); scrollBottom();
+  };
+  const finishCard = (ok) => {
+    const spin = card.querySelector(".think-spin"); if (spin) spin.classList.add("hide");
+    card.querySelector(".th-t").textContent = ok ? "검토를 마쳤어요" : "검토를 멈췄어요";
+    const st = card.querySelector(".th-state"); st.textContent = ok ? "확인 완료" : "중단"; st.classList.add("done");
+  };
+
+  const es = new EventSource(url); _es = es;
+  es.onmessage = (e) => {
+    let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+    const k = ev && ev.kind;
+    if (!k) return;
+    if (k === "meta") { if (ev.detail && ev.detail.thread_id) c.threadId = ev.detail.thread_id; addStep("📋 접수: " + (ev.detail && ev.detail.address || c.loc.address)); return; }
+    if (k === "tool_call") { addStep(ev.label || (ev.detail && ev.detail.tool)); return; }
+    if (k === "tool_result") { if (ev.detail && ev.detail.found === false) addStep("⚠ " + (ev.label || "결과") + " — 확인필요", true); return; }
+    if (k === "citation") { const d = ev.detail || {}; addStep("🔖 근거 확보 " + [d.law_name, d.article].filter(Boolean).join(" "), true); return; }
+    if (k === "node_done") { addStep(ev.label); return; }
+    if (k === "verdict") { addStep(ev.label || "🧩 1차 판정 도출"); return; }
+    if (k === "abstain") { addStep(ev.label || "⏸ 자동판정 보류", true); return; }
+    if (k === "error") { addStep("⚠️ " + (ev.label || "오류"), true); return; }
+    if (k === "interrupt") { try { es.close(); } catch (_) {} _es = null; showInterrupt(ev.detail, card, stepsBox); return; }
+    if (k === "done") { try { es.close(); } catch (_) {} _es = null; finishCard(true); fetchResult(c); return; }
+    // 모르는 kind → 무시
+  };
+  es.onerror = () => {
+    if (_es) { try { _es.close(); } catch (_) {} _es = null; }
+    finishCard(false);
+    // 결과가 이미 받아졌으면 표시, 아니면 안내
+    if (c.threadId) fetchResult(c);
+    else aiSay("진단 연결이 끊어졌어요. 잠시 후 ‘주소 변경’으로 다시 시도하거나 입력을 확인해 주세요.", 400);
+  };
+}
+
+// 인터럽트(HITL) — fields 인라인 입력 → /diagnose/resume
+function showInterrupt(detail, card, stepsBox) {
+  const c = S.active;
+  detail = detail || {};
+  const fields = arr(detail.fields).length ? detail.fields : ["floor_area", "floor_count"];
+  const labels = { floor_area: "연면적(㎡)", floor_count: "층수", use_type: "용도" };
+  const types = { floor_area: "number", floor_count: "number", use_type: "text" };
+  addInterruptStep(stepsBox, "✋ 추가 입력이 필요해요");
+  const box = el("div", "msg ai");
+  box.innerHTML = `<div class="av"></div><div class="col"><div class="who">가늠이</div></div>`;
+  const form = el("div", "card card-pad scale-form", "");
+  form.innerHTML = `
+    <div class="card-h" style="padding:0 0 4px">${I.bang} ${esc(detail.question || "추가 입력이 필요합니다")}</div>
+    <div class="sf-row">${fields.map((f) => `<label class="sf-field"><span class="sf-k">${esc(labels[f] || f)}</span><input data-f="${esc(f)}" type="${types[f] || "text"}" ${types[f] === "number" ? 'inputmode="decimal" step="any"' : ""} /></label>`).join("")}</div>
+    <div class="sf-actions">
+      <button class="btn btn-primary sf-go" id="intOk">이어서 진단 ${I.arrow}</button>
+      <button class="btn btn-soft" id="intReject">중단</button>
+    </div>`;
+  box.querySelector(".col").appendChild(form);
+  msgs().appendChild(box); scrollBottom();
+
+  $("#intOk", form).onclick = () => {
+    const qs = new URLSearchParams({ thread_id: c.threadId });
+    $$("input[data-f]", form).forEach((i) => { if (i.value !== "") qs.set(i.dataset.f, i.value); });
+    const sum = $$("input[data-f]", form).map((i) => i.value ? `${labels[i.dataset.f] || i.dataset.f} ${i.value}` : null).filter(Boolean).join(" · ");
+    box.remove();
+    if (sum) pushUser(sum);
+    resumeStream("/diagnose/resume?" + qs.toString(), card, stepsBox);
+  };
+  $("#intReject", form).onclick = () => {
+    box.remove();
+    pushUser("진단을 중단할게요");
+    resumeStream("/diagnose/resume?" + new URLSearchParams({ thread_id: c.threadId, reject: "true" }).toString(), card, stepsBox);
+  };
+}
+function addInterruptStep(stepsBox, label) {
+  const s = el("div", "think-step on", `<span class="tk">${I.bang}</span>${esc(label)}`);
+  stepsBox.appendChild(s); scrollBottom();
+}
+
+// resume도 같은 think-card에 step을 이어 붙임
+function resumeStream(url, card, stepsBox) {
+  const c = S.active;
+  if (_es) { try { _es.close(); } catch (e) {} _es = null; }
+  const spin = card.querySelector(".think-spin"); if (spin) spin.classList.remove("hide");
+  const st = card.querySelector(".th-state"); st.textContent = "분석 중"; st.classList.remove("done");
+  const seen = new Set([...stepsBox.children].map((n) => n.textContent));
+  const addStep = (label, dim) => {
+    if (!label) return; const key = String(label); if (seen.has(key)) return; seen.add(key);
+    const s = el("div", "think-step on" + (dim ? " dim" : ""), `<span class="tk">${I.check}</span>${esc(label)}`);
+    stepsBox.appendChild(s); scrollBottom();
+  };
+  const finishCard = (ok) => {
+    const sp = card.querySelector(".think-spin"); if (sp) sp.classList.add("hide");
+    card.querySelector(".th-t").textContent = ok ? "검토를 마쳤어요" : "검토를 멈췄어요";
+    const s2 = card.querySelector(".th-state"); s2.textContent = ok ? "확인 완료" : "중단"; s2.classList.add("done");
+  };
+  const es = new EventSource(url); _es = es;
+  es.onmessage = (e) => {
+    let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+    const k = ev && ev.kind; if (!k) return;
+    if (k === "tool_call") return addStep(ev.label || (ev.detail && ev.detail.tool));
+    if (k === "tool_result") { if (ev.detail && ev.detail.found === false) addStep("⚠ " + (ev.label || "결과") + " — 확인필요", true); return; }
+    if (k === "citation") { const d = ev.detail || {}; return addStep("🔖 근거 확보 " + [d.law_name, d.article].filter(Boolean).join(" "), true); }
+    if (k === "node_done") return addStep(ev.label);
+    if (k === "verdict") return addStep(ev.label || "🧩 1차 판정 도출");
+    if (k === "abstain") return addStep(ev.label || "⏸ 자동판정 보류", true);
+    if (k === "error") return addStep("⚠️ " + (ev.label || "오류"), true);
+    if (k === "interrupt") { try { es.close(); } catch (_) {} _es = null; return showInterrupt(ev.detail, card, stepsBox); }
+    if (k === "done") { try { es.close(); } catch (_) {} _es = null; finishCard(true); return fetchResult(c); }
+  };
+  es.onerror = () => { if (_es) { try { _es.close(); } catch (_) {} _es = null; } finishCard(true); fetchResult(c); };
+}
+
+// ============================================================
+//  결과 fetch → verdict-card + doc-cards
+// ============================================================
+async function fetchResult(c) {
+  if (!c || !c.threadId) return;
+  let j;
+  try {
+    const r = await fetch("/diagnose/result?thread_id=" + encodeURIComponent(c.threadId));
+    j = await r.json();
+  } catch (e) { await aiSay("결과를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.", 400); return; }
+  c.result = j;
+  // 입지 메타를 상담 loc에 반영(사이드바·헤더 갱신)
+  if (j.zone) c.loc.zone = j.zone;
+  if (j.jimok) c.loc.jimok = j.jimok;
+  persist();
+  // 헤더 서브라인 갱신
+  const sub = [c.loc.zone, c.loc.jimok].filter(Boolean);
+  const acs = $("#chead .ac-s"); if (acs && sub.length) acs.innerHTML = sub.map((x) => `<span>${esc(x)}</span>`).join('<span class="dotsep">·</span>');
+
+  await wait(250);
+  const env = j._return || {};
+  const card = env.card || {};
+  const cits = arr(j.citations);
+  await aiSay(`진단 결과가 나왔어요. 아래 카드에서 <b>가능 여부와 근거</b>를 확인하세요.`, 500);
+  pushAINode(verdictCard(env, card, cits, j));
+  await wait(350);
+  setStage(3);
+  await aiSay(`이 진단을 바탕으로 <b>준비하셔야 할 서류</b>를 단계별로 정리했어요. 각 서류는 발급처와 공식 링크를 함께 안내해요.`, 600);
+  pushAINode(docCards(card));
+  await wait(250);
+  await aiSay(`이 주소 기준으로 더 궁금한 점이 있으면 아래에 물어보세요. 예) “용적률이 뭐야?”, “세움터 어디로 들어가?”`, 500);
+}
+
+// ── verdict-card (level: classifyVerdict.tone → go/cond/check) ──
+function verdictCard(env, card, cits, full) {
+  const v = card.verdict;
+  const cls = classifyVerdict(v);
+  const level = cls.tone === "affirmative" ? "go" : (cls.tone === "conditional" || cls.tone === "danger") ? "cond" : "check";
+  const sig = level === "go" ? I.go : level === "cond" ? I.cond : I.info;
+  const lr = card.legal_reasoning || {};
+  const steps = arr(lr.steps);
+
+  // vc-body = 1차판정 사유 요약: verdict_basis_seq의 step infer/fact, 없으면 확인필요 step 사유
+  let bodyHtml = bodySummary(card, lr, steps, env);
+
+  // kv-grid: zone·jimok·도로접면(입지 step에서 추출)·규제(첫 reg_effect)
+  const kv = [];
+  if (full && full.zone) kv.push(["용도지역", maybeTerm("용도지역") + " " + esc(full.zone)]);
+  if (full && full.jimok) kv.push(["지목", maybeTerm("지목") + " " + esc(full.jimok)]);
+  const road = roadFromSteps(steps);
+  if (road) kv.push(["도로접면", maybeTerm("도로접면") + " " + esc(road)]);
+  arr(card.reg_effects).slice(0, 1).forEach((r) => { if (r && r.reg_name) kv.push(["중첩 규제", esc(r.reg_name)]); });
+  while (kv.length && kv.length < 2) break;
+
+  // check-list: steps (확정→ok, 확인필요→na)
+  const checkRows = steps.map((s) => {
+    const ok = s.status === "확정";
+    const txt = [s.kind, s.fact].filter(Boolean).join(" · ") || (s.kind || "단계");
+    return `<div class="check-row ${ok ? "ok" : "na"}"><span class="ck">${ok ? I.check : I.bang}</span>${esc(txt)}</div>`;
+  }).join("");
+
+  // risk-list: abstentions + 확인필요 step + scale_limits.notes
+  const risks = [];
+  steps.filter((s) => s.status === "확인필요").forEach((s) => risks.push([`'${s.kind || "단계"}' 근거 미확보 → 확인필요`, esc(s.infer || s.leads || "담당 부서·건축사 확인이 필요해요."), "mid"]));
+  const sl = card.scale_limits || {};
+  arr(sl.notes).forEach((n) => risks.push(["규모 기준", esc(n), "low"]));
+  if (sl.energy_saving_required) risks.push([maybeTerm("에너지절약계획서") + " 대상", "연면적 기준을 넘어 에너지절약계획서 제출이 필요해요.", "mid"]);
+  if (sl.structural_safety_required) risks.push([maybeTerm("구조안전확인서") + " 대상", "연면적·층수 기준에 따라 구조안전 확인이 필요해요.", "mid"]);
+  arr(env.abstentions).concat(arr(card.abstentions)).forEach((a) => risks.push([(a.node ? `[${esc(a.node)}] ` : "") + "자동판정 보류", esc(a["사유"] || ""), "mid"]));
+  const riskHtml = risks.map((r) => `<div class="risk-row ${r[2]}"><div class="rc">${I.bang}</div><div><div class="rt">${r[0]}</div><div class="rd">${r[1]}</div></div></div>`).join("");
+
+  // next-list: 합성(서류 준비 + 관할 문의 + author)
+  const next = synthNext(card, full);
+  const nextHtml = next.map((n) => `<li>${n}</li>`).join("");
+
+  // 판단 근거 disclose: steps(basis별) + citations(url 링크)
+  const discloseHtml = discloseBody(steps, cits);
+  const substN = cits.filter((c) => ["law", "ordin", "data"].includes(c.source)).length;
+  const discloseN = steps.length + cits.length;
+
+  // 보류 카드(한글키) 방어: legal_reasoning 없고 한글키만 있을 때
+  const isAbstainShape = !card.legal_reasoning && (card["입지"] || card["사유"]);
+
+  return `<div class="card verdict-card ${level}">
+    <div class="vc-top"><div class="signal">${sig}</div><div><div class="vc-label">AI 사전 진단 · ${esc(statusKo(env.terminal_reason))}</div><div class="vc-title">${esc(cls.label)}</div></div></div>
+    <div class="vc-body">${bodyHtml}</div>
+    <div class="vc-caveat">${I.info}<span>이건 <b>입력하신 조건 기준의 사전 진단</b>이에요. 최종 허가 여부는 관할 기관 확인이 필요해요.</span></div>
+    ${kv.length ? `<div class="kv-grid">${kv.map(([k, val]) => `<div class="kv-cell"><div class="k">${esc(k)}</div><div class="v">${val}</div></div>`).join("")}</div>` : ""}
+    ${isAbstainShape ? abstainBlock(card) : ""}
+    ${checkRows ? `<div class="card-h">${I.list} 검토한 항목</div><div class="check-list">${checkRows}</div>` : ""}
+    ${riskHtml ? `<div class="card-h">${I.bang} 미리 알아둘 점</div><div class="risk-list">${riskHtml}</div>` : ""}
+    ${nextHtml ? `<div class="card-h">${I.route} 다음에 해야 할 일</div><ol class="next-list">${nextHtml}</ol>` : ""}
+    <details class="disclose"><summary>판단 근거 ${discloseN}개 보기 <span class="chev">${I.chev}</span></summary>
+      <div class="dbody">${discloseHtml}<div class="cite-meta">법적 근거 ${substN}건${cits.length > substN ? ` · 입지 출처 ${cits.length - substN}건(법적 근거 아님)` : ""}</div></div>
+    </details>
+  </div>`;
+}
+
+// vc-body: 1차판정 사유 요약 (verdict_basis_seq 우선 → 확인필요 step → fallback)
+function bodySummary(card, lr, steps, env) {
+  const basisSeq = arr(lr.verdict_basis_seq);
+  const bySeq = (n) => steps.find((s) => s.seq === n);
+  const picks = basisSeq.map(bySeq).filter(Boolean);
+  if (picks.length) {
+    return picks.map((s) => `<b>${esc(s.kind || "근거")}</b> — ${esc(s.fact || "")}${s.infer ? " · " + esc(s.infer) : ""}`).join("<br>");
+  }
+  const needs = steps.filter((s) => s.status === "확인필요");
+  if (needs.length) {
+    return "자동으로 확정하지 못한 항목이 있어 <b>확인필요</b>로 판정했어요.<br>" + needs.map((s) => `${esc(s.kind || "단계")}: ${esc(s.infer || s.leads || "추가 확인 필요")}`).join("<br>");
+  }
+  if (steps.length) return steps.map((s) => `<b>${esc(s.kind)}</b> ${esc(s.fact || "")}`).join("<br>");
+  // 보류형 한글키
+  if (card["사유"]) return esc(Array.isArray(card["사유"]) ? card["사유"].map((x) => x["사유"] || x).join(" / ") : card["사유"]);
+  return "근거가 충분치 않아 자동 판정을 보류했어요. 아래 항목을 확인해 주세요.";
+}
+
+function roadFromSteps(steps) {
+  const ip = steps.find((s) => s.kind === "입지" || (s.fact && /도로접면/.test(s.fact)));
+  if (!ip || !ip.fact) return "";
+  const m = String(ip.fact).match(/도로접면=([^\s]+)/);
+  if (m) return m[1] === "None" ? "확인필요" : m[1];
+  return "";
+}
+
+function synthNext(card, full) {
+  const out = [];
+  const stages = arr(card.documents).map((d) => d.stage || d.stage_key).filter(Boolean);
+  if (stages.length) out.push(`아래 단계별 서류 준비: ${esc(stages.join(" → "))}`);
+  arr(card.uijae).forEach((u) => { if (u.permit_name) out.push(`의제 검토: ${esc(u.permit_name)}`); });
+  const au = card.author;
+  if (au && typeof au === "object" && au.requires_architect) out.push("설계도서는 건축사 작성이 필요해요 (건축법 §23①).");
+  const sigungu = full && full.address ? regionOf(full.address) : "";
+  out.push(`관할 기관(${esc(sigungu || "해당 시·군·구청 건축과")})에 적용 조례·세부 조건 문의`);
+  return out;
+}
+function regionOf(addr) {
+  const m = String(addr).match(/(\S+[시군구])\s/);
+  return m ? m[1] + "청" : "";
+}
+
+function discloseBody(steps, cits) {
+  // basis별: null→근거미확보 / vworld→입지출처(법근거 아님) / law·ordin·data→법적근거
+  const stepRows = steps.map((s) => {
+    const b = s.basis;
+    const cls = !b ? "none" : (b === "vworld" ? "site" : "law");
+    const tag = !b ? "근거 미확보 → 확인필요" : (b === "vworld" ? "입지 출처(법적 근거 아님)" : "법적 근거: " + esc(b));
+    return `<div class="basis-item"><div class="bc">${!b ? I.bang : I.check}</div><div><div class="bt">${esc(s.kind || "단계")}</div><div class="bd">${esc(s.fact || "")}${s.infer ? " — " + esc(s.infer) : ""}</div><span class="bsrc bsrc-${cls}">${tag}</span></div></div>`;
+  }).join("");
+  // citations: 법령 원문 링크(url 있으면), 없으면 law_name으로 law.go.kr
+  const citRows = cits.map((c) => {
+    const head = [c.law_name, c.article, c.title].filter(Boolean).join(" ") || (c.source || "근거");
+    const href = c.url || (c.law_name ? lawURL(c.law_name) : null);
+    const link = href ? `<a class="law-src" href="${esc(href)}" target="_blank" rel="noreferrer">${I.ext} 법령 원문 보기</a>` : "";
+    const badge = c.extract_method ? `<span class="bsrc bsrc-${c.source === "vworld" ? "site" : "law"}">${esc(c.source)} · ${esc(c.extract_method)}</span>` : `<span class="bsrc bsrc-${c.source === "vworld" ? "site" : "law"}">${esc(c.source || "")}</span>`;
+    return `<div class="law-item"><div class="law-name">${I_law}<span>${esc(head)}</span></div>${c.quote ? `<div class="law-plain">“${esc(c.quote)}”</div>` : ""}${badge}${link}</div>`;
+  }).join("");
+  return `<div class="basis-wrap">${stepRows}</div>${citRows ? `<div class="law-list" style="margin-top:12px">${citRows}</div>` : ""}`;
+}
+
+function abstainBlock(card) {
+  const ip = card["입지"] || {};
+  const rows = [["지목", ip["지목"]], ["용도지역", ip["용도지역"]], ["도로접면", ip["도로접면"]]]
+    .map(([k, v]) => `<div class="kv-cell"><div class="k">${esc(k)}</div><div class="v">${v == null ? "미확보" : esc(v)}</div></div>`).join("");
+  return `<div class="kv-grid">${rows}</div>`;
+}
+
+// ── doc-cards (documents[] → docx) ──
+function docCards(card) {
+  const docs = arr(card.documents);
+  if (!docs.length) return `<div class="card card-pad"><div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 필요 서류</span></div><p style="font-size:14px;color:var(--fg-3);margin:6px 0 0">서류 단계가 산출되지 않았어요. 관할 기관에 직접 문의가 필요해요.</p></div>`;
+  // 발급처/링크: stage_key 기반 공식 포털 안내 (가짜 서류명 금지 — 단계+건수만)
+  const portal = (stage) => {
+    if (/농지/.test(stage)) return ["정부24 · 농지민원", "https://www.gov.kr"];
+    if (/사용승인|착공|건축/.test(stage)) return ["세움터(건축행정시스템)", "https://www.eais.go.kr"];
+    return ["세움터(건축행정시스템)", "https://www.eais.go.kr"];
+  };
+  return `<div class="card card-pad">
+    <div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 단계별 필요 서류 ${docs.length}단계</span></div>
+    ${docs.map((d) => {
+      const stage = d.stage || d.stage_key || "단계";
+      const ok = d.status === "전수확보";
+      const [where, link] = portal(stage);
+      const why = ok ? `${d.count != null ? d.count + "개 " : ""}서류 · 전수확보` : "자동확인 실패 → 확인필요";
+      return `<div class="docx">
+        <div class="docx-top">
+          <div class="dn">${I.file}</div>
+          <div class="dmain"><div class="dt">${esc(stage)}</div><div class="dwhy">${esc(why)}</div></div>
+          <div class="dbadges"><span class="dbadge ${ok ? "req" : "opt"}">${ok ? "필수" : "확인필요"}</span></div>
+        </div>
+        <div class="docx-where">${I.pin}<span>발급·접수처 <b>${esc(where)}</b></span></div>
+        <div class="docx-actions">
+          <a class="dlink" href="${esc(link)}" target="_blank" rel="noreferrer">${I.ext} ${esc(where)} 바로가기</a>
+        </div>
+      </div>`;
+    }).join("")}
+    <div class="docx-note" style="font-size:12.5px;color:var(--fg-3);margin-top:12px;line-height:1.5">${I.info} 각 단계의 세부 서류 목록은 발급처에서 확인하세요. ‘확인필요’ 단계는 자동 조회가 되지 않아 직접 확인이 필요해요.</div>
+  </div>`;
+}
+
+// ============================================================
+//  자유 입력 (간단 — 주소기준 추가질문은 정적 안내 or 재진단)
+// ============================================================
+async function freeReply(text) {
+  const c = S.active;
+  // 아직 use_type 미선택 → 키워드로 결정 시도
+  if (!c.use_type) {
+    const map = [
+      [/카페|음식점|커피/, "카페"], [/용도\s*변경|바꾸|변경/, "용도변경"], [/증축|대수선|개축/, "증축"],
+      [/단독\s*주택|주택/, "단독주택"], [/근린|상가|점포|가게/, "근린생활시설"],
+      [/신축|새\s*건물|짓|건축/, "근린생활시설"],
+    ];
+    const hit = map.find(([re]) => re.test(text));
+    if (hit) { chooseUse(hit[1], text, true); return; }
+    await aiSay("어떤 건축 행위인지 알려주시면 진단을 시작할게요. 아래에서 가장 가까운 것을 골라 주세요.", 500);
+    pushAINode(quickActions());
+    return;
+  }
+  // 진단 후 추가질문 — 정적 안내(가짜 결과 금지)
+  let r;
+  if (/용적률/.test(text)) r = `${T("용적률")}은 대지 면적 대비 모든 층 바닥을 합한 비율로, 건물을 얼마나 높이 올릴 수 있는지를 정해요. 이 주소의 정확한 한도는 위 진단의 ‘판단 근거’와 관할 조례에서 확인하세요.`;
+  else if (/건폐율/.test(text)) r = `${T("건폐율")}은 대지에서 건물이 바닥으로 덮는 비율이에요. 1층을 얼마나 넓게 깔 수 있는지를 정해요.`;
+  else if (/세움터|어디|접수|신청/.test(text)) r = "세움터(eais.go.kr) 로그인 → ‘건축 인허가’ → 해당 단계를 선택해 신청해요. 농지전용 등 일부는 정부24에서 처리해요.";
+  else if (/서류|준비/.test(text)) r = "위 <b>단계별 필요 서류</b> 카드에서 각 단계 건수와 발급처를 확인하세요. ‘확인필요’ 단계는 자동 조회가 안 돼 직접 확인이 필요해요.";
+  else if (/다시|재진단|새로/.test(text)) r = "같은 주소로 다시 진단하려면 위에서 건축 행위를 다시 고르거나, ‘주소 변경’으로 새 상담을 시작하세요.";
+  else r = "이 주소·조건 기준으로 위 진단 카드와 서류 안내를 확인해 보세요. 용적률·건폐율·서류·관할 같은 주제로 물어보시면 더 설명해 드릴게요. 최종 허가 여부는 관할 기관 확인이 필요해요.";
+  await aiSay(r, 550);
+}
+
+// ============================================================
+//  dynamic wiring
+// ============================================================
+function wireDynamic() {
+  $$(".qa[data-use]").forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => chooseUse(b.dataset.use, b.dataset.name); });
+  $$("#sfGo").forEach((b) => {
+    if (b._w) return; b._w = 1;
+    b.onclick = () => {
+      const form = b.closest(".scale-form");
+      const a = parseFloat($("#sfArea", form).value);
+      const f = parseInt($("#sfFloors", form).value, 10);
+      if (!(a > 0)) { $("#sfArea", form).focus(); return; }
+      beginDiagnose(a, f > 0 ? f : 1);
+    };
+  });
+  wireTerms();
+}
+
+// ============================================================
+//  용어 popover
+// ============================================================
+let pop = null;
+function wireTerms() {
+  $$(".term").forEach((t) => { if (t._w) return; t._w = 1; t.onmouseenter = () => showPop(t); t.onmouseleave = hidePop; t.onclick = (e) => { e.stopPropagation(); showPop(t); }; t.tabIndex = 0; t.onfocus = () => showPop(t); t.onblur = hidePop; });
+}
+function showPop(t) {
+  hidePop(); const g = GLOSSARY[t.dataset.term]; if (!g) return;
+  pop = el("div", "term-pop", `<div class="tp-t">${esc(g[0])}</div>${esc(g[1])}`);
+  document.body.appendChild(pop);
+  const r = t.getBoundingClientRect();
+  let top = r.bottom + 8, left = Math.min(r.left, window.innerWidth - 316);
+  if (left < 12) left = 12;
+  if (top + pop.offsetHeight > window.innerHeight - 12) top = r.top - pop.offsetHeight - 8;
+  pop.style.top = top + "px"; pop.style.left = left + "px";
+  requestAnimationFrame(() => pop && pop.classList.add("show"));
+}
+function hidePop() { if (pop) { pop.remove(); pop = null; } }
+document.addEventListener("click", hidePop);
+document.addEventListener("scroll", hidePop, true);
+
+// ============================================================
+//  composer
+// ============================================================
+function wireComposer() {
+  const ta = $("#cmpInput"), send = $("#cmpSend");
+  const upd = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; send.disabled = ta.value.trim() === ""; };
+  ta.addEventListener("input", upd);
+  ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } });
+  send.addEventListener("click", submit);
+  function submit() { const v = ta.value.trim(); if (!v || !S.active) return; ta.value = ""; upd(); pushUser(v); freeReply(v); }
+  upd();
+}
+
+// ── 모바일 드로어 ──
+function openDrawer() { $(".sidebar").classList.add("open"); $("#scrim").classList.add("show"); }
+function closeDrawer() { $(".sidebar").classList.remove("open"); $("#scrim").classList.remove("show"); }
+
+// ============================================================
+//  카카오 SDK 동적 로드 (/config 키 — 하드코딩 금지)
+// ============================================================
+async function loadKakaoSDK() {
+  try {
+    const r = await fetch("/config");
+    const j = await r.json();
+    if (!j || !j.kakao_js_key) return;
+    S.kakaoKey = j.kakao_js_key;
+    await new Promise((res) => {
+      const s = document.createElement("script");
+      s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${j.kakao_js_key}&libraries=services&autoload=false`;
+      s.onload = () => res();
+      s.onerror = () => res(); // 실패해도 폴백 지도로 진행
+      document.head.appendChild(s);
+    });
+  } catch (e) { /* config 없으면 맵 생략 → 폴백 */ }
+}
+
+// ============================================================
+//  init
+// ============================================================
+async function init() {
+  if (init._done) return; init._done = true;
+  restore();
+  $("#newChat").onclick = () => { closeDrawer(); openMap(); };
+  $("#overlay").addEventListener("click", (e) => { if (e.target.id === "overlay") closeMap(); });
+  $("#changeAddr") && ($("#changeAddr").onclick = openMap);
+  $("#menuBtn") && ($("#menuBtn").onclick = openDrawer);
+  $("#scrim") && ($("#scrim").onclick = closeDrawer);
+  $("#mbarChange") && ($("#mbarChange").onclick = openMap);
+  window.__closeDrawer = closeDrawer;
+  renderRail();
+  wireComposer();
+  showOnboard();
+  await loadKakaoSDK(); // 온보딩 후 백그라운드 로드 — 지도 모달 열기 전 준비
+}
+
+document.addEventListener("DOMContentLoaded", init);
+if (document.readyState !== "loading") init();
