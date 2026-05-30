@@ -18,7 +18,14 @@ import wf_roadmap as RM          # author_rule (건축법§23①)
 from state import Citation, UijaeItem, DocItem, StageDocs, JoryeVerdict, RegEffect, AuthorRule, ScaleLimit, LevyItem
 import math
 
-_JIMOK = {"임": "임야", "과": "과수원", "목": "목장용지", "잡": "잡종지"}
+# 지목 28종 부호→정식명 전수(공간정보관리법 시행령 §58). VWorld jibun이 부호 1자만 줄 때 정규화 — 부분매핑 desync 방지.
+# (정식명 토큰은 키가 아니므로 .get(t,t)로 그대로 통과 = 이미 정규형. 의제·부담금 유형 결정은 LLM 위임.)
+_JIMOK = {"전": "전", "답": "답", "과": "과수원", "목": "목장용지", "임": "임야",
+          "광": "광천지", "염": "염전", "대": "대", "장": "공장용지", "학": "학교용지",
+          "차": "주차장", "주": "주유소용지", "창": "창고용지", "도": "도로", "철": "철도용지",
+          "제": "제방", "천": "하천", "구": "구거", "유": "유지", "양": "양어장",
+          "수": "수도용지", "공": "공원", "체": "체육용지", "원": "유원지", "종": "종교용지",
+          "사": "사적지", "묘": "묘지", "잡": "잡종지"}
 def _S(v):
     if v is None: return ""
     if isinstance(v, list): return " ".join(_S(x) for x in v)
@@ -216,12 +223,14 @@ def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[
             continue
         bno = _S(b.get("별표번호")).lstrip("0")
         bti = _S(b.get("별표제목"))
-        if (numkey and numkey == bno) or (byeolpyo_kw.strip() and byeolpyo_kw.strip() in bti) or ("용도별" in bti and "용도" in byeolpyo_kw):
+        if (numkey and numkey == bno) or (byeolpyo_kw.strip() and byeolpyo_kw.strip() in bti):   # 번호 또는 제목 부분문자열(입력기반 일반규칙만)
             t = re.sub(r"\s+", " ", _S(b.get("별표내용")))
             cite = Citation(source="law", law_name=law_name, article=_S(b.get("별표번호")), quote=t[:200]).model_dump()
             return Command(update={"citations": [cite], "_toolcalls": ["law_byeolpyo_fetch"],
                                    "messages": [_tm(f"[{law_name} {byeolpyo_kw}]\n{t[:7000]}", tool_call_id)]})
-    return Command(update={"_toolcalls": ["law_byeolpyo_fetch"], "messages": [_tm("별표 못찾음", tool_call_id)]})
+    cands = [(_S(b.get("별표번호")), _S(b.get("별표제목"))[:30]) for b in bu if isinstance(b, dict)]   # 형제(law_article_fetch)와 동일 — 후보 돌려줘 LLM 재호출
+    return Command(update={"_toolcalls": ["law_byeolpyo_fetch"],
+                           "messages": [_tm(f"별표 못찾음. '{law_name}' 별표 후보: {cands}. 정확한 번호나 제목으로 재호출.", tool_call_id)]})
 
 
 def _parse_article(article):
@@ -398,10 +407,10 @@ def levy_estimate(levy_type: str, land_price: Optional[float] = None, area_m2: O
             msg = f"농지보전부담금 ≈ {amt:,}원 ({formula}, 율 {rate_pct}%)"
         else:
             li = LevyItem(levy_type="농지보전부담금", formula=formula, status="확인필요",
-                          note="율(rate_pct=진흥30/밖20)·공시지가·면적 필요 — 시행령§53서 율 읽어 재호출").model_dump()
+                          note="율(rate_pct)·공시지가·면적 필요 — 농지법 시행령§53에서 농업진흥지역 안/밖 율을 읽어 재호출(값은 원문에서)").model_dump()
             msg = "농지보전부담금: 산식만(율·공시지가·면적 필요)"
     elif "산림" in lt or "대체" in lt:
-        li = LevyItem(levy_type="대체산림자원조성비", formula="면적 × 산림청 고시단가(보전+30%/제한+100% 할증)",
+        li = LevyItem(levy_type="대체산림자원조성비", formula="면적 × 산림청 고시단가(보전산지/준보전산지 등급별 할증 적용)",
                       status="확인필요", note="단가=산림청 매년 고시(법령·API 밖) → 금액 미산출",
                       citation=Citation(source="law", law_name="산지관리법", article="§19",
                                         quote="대체산림자원조성비 산식 — ㎡당 단가는 산림청 고시 확인필요")).model_dump()
