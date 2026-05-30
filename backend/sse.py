@@ -57,16 +57,16 @@ def _events(graph, state, cfg, resume=None):
             if node == "agent":
                 msgs = delta.get("messages") or []
                 last = msgs[-1] if msgs else None
+                content = _msg_attr(last, "content", "") if last is not None else ""
                 tcs = _msg_attr(last, "tool_calls") if last is not None else None
+                # 사고(content)를 도구호출 앞에 먼저 노출(GPT/Claude Thinking식) — content와 tool_calls 둘 다
+                if content and str(content).strip():
+                    yield ev("thinking", node, "🤔 판단", {"text": _q(content, 400)})
                 if tcs:
                     for tc in tcs:                                  # 병렬 호출 = 같은 agent 턴(seq는 각자 +1, dedup은 프론트)
                         name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
                         args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
                         yield ev("tool_call", node, tool_label(name), {"tool": name, "args": _safe_args(args)})
-                else:
-                    content = _msg_attr(last, "content", "") if last is not None else ""
-                    if content:
-                        yield ev("thinking", node, "🤖 판단", {"text": _q(content, 300)})
             elif node == "tools":
                 for m in (delta.get("messages") or []):
                     c = _msg_attr(m, "content", "")
