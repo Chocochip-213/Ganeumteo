@@ -97,6 +97,16 @@ def stub_plan(state):
     return AIMessage(content="조사 완료 — 도구 호출 종료")
 
 
+def _agent_invoke(llm, msgs):
+    """LLM 호출 — 예외(prompt_too_long·API 오류 등) 시 크래시 대신 정직 종료. 빈 AIMessage 반환 →
+    completeness_guard의 death-spiral 가드가 바운스 없이 abstain 마감(확보된 부분결과로 정리, 전체 유실 방지)."""
+    try:
+        return {"messages": [llm.invoke(msgs)]}
+    except Exception as e:
+        return {"messages": [AIMessage(content="")],
+                "abstentions": [{"node": "agent", "사유": f"LLM 예외 {type(e).__name__}: {str(e)[:120]}"}]}
+
+
 def make_agent_node():
     from dotenv import load_dotenv
     load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -111,13 +121,13 @@ def make_agent_node():
                          base_url="https://gms.ssafy.io/gmsapi/api.openai.com/v1",
                          api_key=gms).bind_tools(TOOLS)   # temperature 미설정(gpt-5 기본만 허용)
         def agent_node(state):
-            return {"messages": [llm.invoke([("system", AGENT_SYSTEM)] + state["messages"])]}
+            return _agent_invoke(llm, [("system", AGENT_SYSTEM)] + state["messages"])
         return agent_node, "LLM(GMS gpt-5.2)"
     if os.environ.get("ANTHROPIC_API_KEY"):
         from langchain_anthropic import ChatAnthropic
         llm = ChatAnthropic(model="claude-haiku-4-5-20251001", temperature=0, max_tokens=2000).bind_tools(TOOLS)
         def agent_node(state):
-            return {"messages": [llm.invoke([("system", AGENT_SYSTEM)] + state["messages"])]}
+            return _agent_invoke(llm, [("system", AGENT_SYSTEM)] + state["messages"])
         return agent_node, "LLM(ChatAnthropic)"
     def agent_node(state):
         return {"messages": [stub_plan(state)]}
