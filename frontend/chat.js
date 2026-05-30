@@ -64,13 +64,14 @@ function T(key, label) { const g = GLOSSARY[key]; return `<span class="term" dat
 function maybeTerm(text) { return GLOSSARY[text] ? T(text) : esc(text); }
 
 // ── 채팅 추천 액션 (의도 → use_type) ──
+// 구체적 시설을 평이한 말로 — 건축법 분류는 에이전트가 해석(사용자가 제1종/제2종 같은 걸 알 필요 없음)
 const ACTIONS = [
-  { t: "새 건물을 짓고 싶어요", d: "신축 — 주택·상가 등", use: "근린생활시설", ic: "home" },
-  { t: "단독주택을 짓고 싶어요", d: "신축 — 단독주택", use: "단독주택", ic: "home" },
-  { t: "근린생활시설을 짓고 싶어요", d: "신축 — 상가·점포", use: "근린생활시설", ic: "home" },
-  { t: "카페·음식점을 하고 싶어요", d: "신축/용도변경 — 카페", use: "카페", ic: "coffee" },
-  { t: "기존 건물을 다른 용도로 바꾸고 싶어요", d: "용도변경", use: "용도변경", ic: "swap" },
-  { t: "증축이 가능한지 알고 싶어요", d: "증축·대수선", use: "증축", ic: "extend" },
+  { t: "카페·음식점", d: "휴게/일반음식점", use: "카페", ic: "coffee" },
+  { t: "소매점·상가", d: "편의점·옷가게 등", use: "소매점", ic: "home" },
+  { t: "사무실", d: "업무시설", use: "사무실", ic: "home" },
+  { t: "단독주택", d: "내 집 짓기", use: "단독주택", ic: "home" },
+  { t: "다세대·다가구주택", d: "여러 세대 주택", use: "다세대주택", ic: "home" },
+  { t: "그 외 (직접 입력)", d: "예: 수영장·학원·미용실·병원…", use: "", ic: "swap" },
 ];
 
 // ── 진행레일 (실제 4단계) ──
@@ -520,17 +521,31 @@ function runDiagnoseStream(url) {
 function showInterrupt(detail, think) {
   const c = S.active;
   detail = detail || {};
-  const fields = arr(detail.fields).length ? detail.fields : ["floor_area", "floor_count"];
-  const labels = { floor_area: "연면적(㎡)", floor_count: "층수", use_type: "용도" };
-  const types = { floor_area: "number", floor_count: "number", use_type: "text" };
+  // 에이전트가 fields를 문자열 또는 객체({name,label,type})로 줄 수 있음 — 양쪽 정규화([object Object] 방지)
+  const labelMap = { floor_area: "연면적(㎡)", floor_count: "층수", use_type: "용도" };
+  const rawFields = arr(detail.fields).length ? detail.fields : ["floor_area", "floor_count"];
+  const fields = rawFields.map((f) => {
+    if (f && typeof f === "object") {
+      const t = (f.type === "number" || f.type === "boolean") ? f.type : "text";
+      return { name: String(f.name || f.key || ""), label: String(f.label || f.name || ""), type: t };
+    }
+    const k = String(f);
+    return { name: k, label: labelMap[k] || k, type: (k === "floor_area" || k === "floor_count") ? "number" : "text" };
+  }).filter((f) => f.name);
   pushTrace(c, { kind: "interrupt", node: null, label: "사용자 입력 필요", detail });
   if (think) think.step("추가 입력이 필요해요");
   const box = el("div", "msg ai");
   box.innerHTML = `<div class="av"></div><div class="col"><div class="who">가늠이</div></div>`;
   const form = el("div", "card card-pad scale-form", "");
+  const fieldHtml = fields.map((f) => {
+    const inp = f.type === "boolean"
+      ? `<select class="sf-input" data-f="${esc(f.name)}"><option value="">선택…</option><option value="true">예</option><option value="false">아니오</option></select>`
+      : `<input class="sf-input" data-f="${esc(f.name)}" type="${f.type}" ${f.type === "number" ? 'inputmode="decimal" step="any"' : ""} placeholder="${esc(f.label)}" />`;
+    return `<label class="sf-field"><span class="sf-k">${esc(f.label)}</span>${inp}</label>`;
+  }).join("");
   form.innerHTML = `
     <div class="card-h" style="padding:0 0 4px">${I.bang} ${esc(detail.question || "추가 입력이 필요합니다")}</div>
-    <div class="sf-row">${fields.map((f) => `<label class="sf-field"><span class="sf-k">${esc(labels[f] || f)}</span><input data-f="${esc(f)}" type="${types[f] || "text"}" ${types[f] === "number" ? 'inputmode="decimal" step="any"' : ""} /></label>`).join("")}</div>
+    <div class="sf-row">${fieldHtml}</div>
     <div class="sf-actions">
       <button class="btn btn-primary sf-go" id="intOk">이어서 진단 ${I.arrow}</button>
       <button class="btn btn-soft" id="intReject">중단</button>
@@ -540,8 +555,9 @@ function showInterrupt(detail, think) {
 
   $("#intOk", form).onclick = () => {
     const qs = new URLSearchParams({ thread_id: c.threadId });
-    $$("input[data-f]", form).forEach((i) => { if (i.value !== "") qs.set(i.dataset.f, i.value); });
-    const sum = $$("input[data-f]", form).map((i) => i.value ? `${labels[i.dataset.f] || i.dataset.f} ${i.value}` : null).filter(Boolean).join(" · ");
+    const lbl = {}; fields.forEach((f) => { lbl[f.name] = f.label; });
+    $$("[data-f]", form).forEach((i) => { if (i.value !== "") qs.set(i.dataset.f, i.value); });
+    const sum = $$("[data-f]", form).map((i) => i.value ? `${lbl[i.dataset.f] || i.dataset.f} ${i.value}` : null).filter(Boolean).join(" · ");
     box.remove();
     if (sum) pushUser(sum);
     resumeStream("/diagnose/resume?" + qs.toString(), think);
@@ -1019,15 +1035,8 @@ async function freeReply(text) {
   const c = S.active;
   // 아직 use_type 미선택 → 키워드로 결정 시도
   if (!c.use_type) {
-    const map = [
-      [/카페|음식점|커피/, "카페"], [/용도\s*변경|바꾸|변경/, "용도변경"], [/증축|대수선|개축/, "증축"],
-      [/단독\s*주택|주택/, "단독주택"], [/근린|상가|점포|가게/, "근린생활시설"],
-      [/신축|새\s*건물|짓|건축/, "근린생활시설"],
-    ];
-    const hit = map.find(([re]) => re.test(text));
-    if (hit) { chooseUse(hit[1], text, true); return; }
-    await aiSay("어떤 건축 행위인지 알려주시면 진단을 시작할게요. 아래에서 가장 가까운 것을 골라 주세요.", 500);
-    pushAINode(quickActions());
+    // 사용자 말을 그대로 use_type으로 — 건축법 용도 해석(수영장→운동시설 등)은 에이전트가 ReAct로(키워드 하드코딩 매칭 안 함)
+    chooseUse(text, text, true);
     return;
   }
   // "다시 진단해줘" 류 → 같은 주소·use로 실제 재진단 트리거(캔드 응답 금지)
@@ -1061,7 +1070,7 @@ async function rediagnose() {
 //  dynamic wiring
 // ============================================================
 function wireDynamic() {
-  $$(".qa[data-use]").forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => chooseUse(b.dataset.use, b.dataset.name); });
+  $$(".qa[data-use]").forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => { if (b.dataset.use) chooseUse(b.dataset.use, b.dataset.name); else { aiSay("어떤 시설을 짓고 싶은지 적어 주세요. (예: 수영장, 학원, 미용실)", 300); const ta = $("#cmpInput"); if (ta) ta.focus(); } }; });
   $$('[data-act="openpanel"]').forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => { if (S.active) { renderPanel(S.active); openPanel(); } }; });
   $$('[data-act="toggle-detail"]').forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => { const d = b.parentElement && b.parentElement.querySelector(".am-detail"); if (d) { d.hidden = !d.hidden; b.classList.toggle("open", !d.hidden); } }; });
   wireTerms();
