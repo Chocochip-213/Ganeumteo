@@ -50,9 +50,17 @@ def diagnose_resume(thread_id: str, request: Request, reject: bool = False):
 @app.get("/diagnose/followup")
 def diagnose_followup(thread_id: str, message: str):
     # 진단 완료 후 후속 대화 — 같은 thread에 사용자 메시지 추가 후 그래프 재호출.
-    # 에이전트가 기존 진단 컨텍스트(메시지 이력) 갖고 답(chat_end)하거나, 새 건물이면 재진단.
+    # 누적 제어채널(_steps/_toolcalls)을 '이번 invoke' 베이스라인으로 잡고 직전 종료사유 클리어
+    # → 잡담 후속질문은 chat_end 도달(진단카드 재방출 방지), 재진단도 도구루프 정상(검수 AF-1/2/3).
     _, cfg = make_config(thread_id)
-    return StreamingResponse(sse.run_stream(GRAPH, {"messages": [HumanMessage(message)]}, cfg),
+    try:
+        prev = GRAPH.get_state(cfg).values
+    except Exception:
+        prev = {}
+    inp = {"messages": [HumanMessage(message)], "terminal_reason": "",
+           "_turn_base_steps": prev.get("_steps", 0),
+           "_turn_base_tools": len(prev.get("_toolcalls", []))}
+    return StreamingResponse(sse.run_stream(GRAPH, inp, cfg),
                              media_type="text/event-stream", headers=_SSE_HEADERS)
 
 

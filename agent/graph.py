@@ -36,15 +36,17 @@ _GUARD_BOUNCE_CAP = 19  # 이 이상이면 guard 바운스 중단(진행)
 
 
 def route_after_agent(state):
+    base_s = state.get("_turn_base_steps", 0)            # 후속턴: 이번 invoke 기준(thread 누적 아님)
+    base_t = state.get("_turn_base_tools", 0)
     if state.get("terminal_reason") in ("site_geocode_failed", "aborted", "error"):  # H4 조기종료
         return "abstain"
-    if state.get("_steps", 0) >= _STEP_HARDCAP:    # 하드캡 초과 → 도구루프 강제 종료
+    if state.get("_steps", 0) - base_s >= _STEP_HARDCAP:    # 이번 invoke 하드캡 — followup 누적 잠금 방지(검수 AF-3)
         return "completeness_guard"
     last = state["messages"][-1]
     if getattr(last, "tool_calls", None):
         return "tools"
-    if not state.get("_toolcalls") and str(getattr(last, "content", "") or "").strip():
-        return "chat_end"   # 클로드식 트리아지: 첫 턴 도구 0 + 텍스트만 = 대화(진단 아님). 휴리스틱 0 — tool_use 방출 여부로만
+    if len(state.get("_toolcalls", [])) <= base_t and str(getattr(last, "content", "") or "").strip():
+        return "chat_end"   # 이번 턴 새 도구 0 + 텍스트만 = 대화(진단 아님). 후속턴 잡담도 chat_end 도달(검수 AF-1)
     return "completeness_guard"
 
 
@@ -76,7 +78,7 @@ def completeness_guard(state):
         need = {"건축허가", "착공신고", "사용승인"} | {u.get("stage_key") for u in state.get("uijae", [])}
         if not need.issubset(doc_stages):
             miss.append("서류전수:" + ",".join(sorted(need - doc_stages)))
-    if miss and state.get("_steps", 0) < _GUARD_BOUNCE_CAP and not stalled:
+    if miss and (state.get("_steps", 0) - state.get("_turn_base_steps", 0)) < _GUARD_BOUNCE_CAP and not stalled:
         return {"_incomplete": True, "messages": [HumanMessage(f"아직 미확인: {miss}. 해당 도구로만 마저 조회하고, 끝나면 도구 없이 '완료'라 답하라.")]}
     if miss:   # 캡 도달 — 더 못 채움 → 기권 사유로 남기고 진행
         return {"_incomplete": False, "abstentions": [{"node": "completeness_guard", "사유": f"미충족 {miss}(스텝 캡)"}]}

@@ -131,6 +131,8 @@ class GaneomteoState(TypedDict):
     # ── 제어
     _toolcalls: Annotated[list, operator.add]        # 호출한 도구명 누적 (완결성 가드용)
     _steps: Annotated[int, operator.add]             # agent 방문 횟수 (루프 하드캡)
+    _turn_base_steps: NotRequired[int]               # 이번 invoke 시작 시 _steps — 후속턴 per-invoke 하드캡 기준(thread 누적 아님)
+    _turn_base_tools: NotRequired[int]               # 이번 invoke 시작 시 len(_toolcalls) — 후속턴 chat_end 판정 기준
     _incomplete: NotRequired[bool]
     terminal_reason: NotRequired[str]
     _card: NotRequired[dict]

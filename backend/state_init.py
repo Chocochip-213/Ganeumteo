@@ -18,6 +18,7 @@ def fresh_state(address, use_type, floor_area=None, floor_count=None):
         # operator.add 누적 필드 전부 pre-init(미초기화 시 누적 오류 — 검수 검증)
         "reg_overlaps": [], "uijae": [], "documents": [], "reg_effects": [], "jorye_verdicts": [],
         "citations": [], "abstentions": [], "_toolcalls": [], "_steps": 0,
+        "_turn_base_steps": 0, "_turn_base_tools": 0,   # per-invoke 하드캡 기준(검수 AF-1/2/3)
     }
 
 
