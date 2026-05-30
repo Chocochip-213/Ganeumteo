@@ -85,20 +85,31 @@ const msgs = () => $("#msgs");
 function scrollBottom() { requestAnimationFrame(() => { const s = scroll(); if (s) s.scrollTop = s.scrollHeight; }); }
 
 // ============================================================
-//  상담기록 영속 (localStorage; 메시지 HTML은 휘발 — 메타만 저장)
+//  상담기록 영속 (localStorage; 대화·결과·플로우 전체 저장 → 복원 시 재생)
 // ============================================================
 function persist() {
   try {
-    const slim = S.convos.map((c) => ({ loc: c.loc, use_type: c.use_type, stage: c.stage, ts: c.ts }));
+    const slim = S.convos.slice(-20).map((c) => ({   // 최근 20건만(용량 보호)
+      loc: c.loc, use_type: c.use_type, stage: c.stage, ts: c.ts,
+      threadId: c.threadId || null,
+      msgs: Array.isArray(c.msgs) ? c.msgs : [],       // 대화 버블(role+html) — openConvo가 재생
+      result: c.result || null,                        // 진단 결과(우측 패널 원천)
+      trace: Array.isArray(c.trace) ? c.trace.slice(-80) : [],  // 상세 플로우(최근 80 step)
+    }));
     localStorage.setItem(LS_KEY, JSON.stringify(slim));
-  } catch (e) { /* 저장 실패 무시 */ }
+  } catch (e) { /* 저장 실패(용량 등) 무시 */ }
 }
 function restore() {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return;
     const slim = JSON.parse(raw);
-    if (Array.isArray(slim)) S.convos = slim.map((c) => ({ ...c, msgs: [], restored: true }));
+    if (Array.isArray(slim)) S.convos = slim.map((c) => ({
+      ...c,
+      msgs: Array.isArray(c.msgs) ? c.msgs : [],
+      trace: Array.isArray(c.trace) ? c.trace : [],
+      restored: true,
+    }));
   } catch (e) { S.convos = []; }
 }
 
@@ -591,6 +602,7 @@ async function fetchResult(c, think) {
   pushAINode(answerMessage(c));
   renderPanel(c);          // 우측 패널 채우고
   openPanel();             // 진단 직후 자동 1회 open
+  persist();               // 답변·결과·플로우까지 저장(기록 영속 — 새로고침/재방문 복원)
 }
 
 // verdict tone → 한 줄 판정 표현(과적합 아님, classifyVerdict 결과만 사용)
