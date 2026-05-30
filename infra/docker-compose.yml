@@ -1,0 +1,23 @@
+# 가늠터 조례 RAG 벡터DB — Postgres16 + pgvector
+# 호스트 포트 5433 (5432는 기존 climingo-postgres-1 점유 — 실측 확인). creds=gameauteo(로컬 전용, 비밀 아님).
+services:
+  pg:
+    image: pgvector/pgvector:pg16
+    container_name: gameauteo-pg
+    environment:
+      POSTGRES_USER: gameauteo
+      POSTGRES_PASSWORD: gameauteo
+      POSTGRES_DB: gameauteo
+    ports:
+      - "5433:5432"
+    volumes:
+      - gameauteo_pgdata:/var/lib/postgresql/data
+      # 첫 볼륨 생성 시에만 적용. 스키마 변경 시 `docker compose down -v` 후 재기동.
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gameauteo -d gameauteo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  gameauteo_pgdata:
