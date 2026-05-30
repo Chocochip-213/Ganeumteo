@@ -77,7 +77,7 @@ def _events(graph, state, cfg, resume=None):
                 tcs = _msg_attr(last, "tool_calls") if last is not None else None
                 # 사고(content)를 도구호출 앞에 먼저 노출(GPT/Claude Thinking식) — content와 tool_calls 둘 다
                 if content and str(content).strip():
-                    yield ev("thinking", node, "🤔 판단", {"text": _q(content, 400)})
+                    yield ev("thinking", node, "판단", {"text": _q(content, 400)})
                 if tcs:
                     for tc in tcs:                                  # 병렬 호출 = 같은 agent 턴(seq는 각자 +1, dedup은 프론트)
                         name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
@@ -88,26 +88,26 @@ def _events(graph, state, cfg, resume=None):
                     c = _msg_attr(m, "content", "")
                     name = _msg_attr(m, "name")
                     found = not any(t in str(c) for t in FAIL_TOKENS)
-                    yield ev("tool_result", node, (tool_label(name) if name else "🔧 결과"),
+                    yield ev("tool_result", node, (tool_label(name) if name else "결과"),
                              {"tool": name, "found": found, "quote": _q(c, 160)})
                 for cit in (delta.get("citations") or []):
-                    yield ev("citation", node, "🔖 근거 확보", _safe_cite(cit))
+                    yield ev("citation", node, "근거 확보", _safe_cite(cit))
                 if "doc_index_hit" in delta:
                     yield ev("node_done", node,
-                             ("📖 조례 인덱스 HIT" if delta["doc_index_hit"] else "📖 조례 라이브 조회"), None)
+                             ("조례 인덱스 적중" if delta["doc_index_hit"] else "조례 라이브 조회"), None)
             elif node == "completeness_guard":
                 yield ev("node_done", node, done_label(node, delta), {"incomplete": bool(delta.get("_incomplete"))})
             elif node == "build_reasoning":
                 lr = delta.get("legal_reasoning") or {}
-                yield ev("verdict", node, "🧩 1차 판정 도출",
+                yield ev("verdict", node, "1차 판정 도출",
                          {"verdict": delta.get("verdict"), "steps": len(lr.get("steps", [])),
                           "basis_seq": lr.get("verdict_basis_seq", [])})
             elif node == "compose":
-                yield ev("node_done", node, "📋 진단 리포트 조립 완료", None)
+                yield ev("node_done", node, "진단 리포트 조립 완료", None)
             elif node == "finalize":
-                yield ev("done", node, "🏁 진단 완료", {"terminal_reason": delta.get("terminal_reason")})
+                yield ev("done", node, "진단 완료", {"terminal_reason": delta.get("terminal_reason")})
             elif node == "abstain":
-                yield ev("abstain", node, "⏸ 자동판정 보류", {"terminal_reason": delta.get("terminal_reason")})
+                yield ev("abstain", node, "자동판정 보류", {"terminal_reason": delta.get("terminal_reason")})
 
     snap = graph.get_state(cfg)                                    # interrupt(HITL) 감지
     if snap.next:
@@ -116,7 +116,7 @@ def _events(graph, state, cfg, resume=None):
             intr = snap.tasks[0].interrupts[0].value
         except Exception:
             intr = {"type": "need_input"}
-        yield ev("interrupt", None, "✋ 사용자 입력 필요", intr)
+        yield ev("interrupt", None, "사용자 입력 필요", intr)
 
 
 def run_stream(graph, state, cfg, resume=None):
@@ -126,7 +126,7 @@ def run_stream(graph, state, cfg, resume=None):
             yield "data: " + json.dumps(e, ensure_ascii=False) + "\n\n"
     except Exception as ex:
         for e in ({"seq": 9998, "ts_seq": 9998, "kind": "error", "node": None,
-                   "label": "⚠️ 조회 오류", "detail": {"error": type(ex).__name__}},
+                   "label": "조회 오류", "detail": {"error": type(ex).__name__}},
                   {"seq": 9999, "ts_seq": 9999, "kind": "done", "node": None,
-                   "label": "🏁 종료", "detail": {"terminal_reason": "error"}}):
+                   "label": "종료", "detail": {"terminal_reason": "error"}}):
             yield "data: " + json.dumps(e, ensure_ascii=False) + "\n\n"
