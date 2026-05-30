@@ -409,37 +409,22 @@ function quickActions() {
   return `<div class="qa-wrap" data-role="qa">${ACTIONS.map((a) => `<button class="qa" data-use="${esc(a.use)}" data-name="${esc(a.t)}"><span class="qi">${I[a.ic] || I.home}</span><span><span style="display:block;font-weight:700">${esc(a.t)}</span><span class="qd">${esc(a.d)}</span></span><span class="qg">${I.arrow}</span></button>`).join("")}</div>`;
 }
 
-// 건축 행위 선택 → 연면적·층수 인라인 입력
+// 건축 행위 선택 → 바로 진단 시작(연면적·층수 강제 안 함 — 에이전트가 판정에 필요할 때 HITL로 요청)
 async function chooseUse(useType, name, skipPush) {
   $$('[data-role="qa"]').forEach((n) => { const m = n.closest(".msg"); (m || n).remove(); });
   if (S.active.msgs) S.active.msgs = S.active.msgs.filter((m) => !(m.role === "node" && /data-role="qa"/.test(m.html)));
   S.active.use_type = useType; persist();
   if (!skipPush) pushUser(name);
-  setStage(1);
+  setStage(2);
   await wait(150);
-  await aiSay(`좋아요. 규모를 알려주시면 더 정확히 진단할 수 있어요.<br><b>연면적(㎡)</b>과 <b>층수</b>를 입력해 주세요.`, 600);
-  pushAINode(scaleForm());
-}
-function scaleForm() {
-  return `<div class="card card-pad scale-form" data-role="scale">
-    <div class="card-h" style="padding:0 0 4px">${I.home} 건축 규모 입력</div>
-    <div class="sf-row">
-      <label class="sf-field"><span class="sf-k">연면적 (㎡)</span><input type="number" inputmode="decimal" id="sfArea" placeholder="예: 264" min="0" step="any" /></label>
-      <label class="sf-field"><span class="sf-k">층수</span><input type="number" inputmode="numeric" id="sfFloors" placeholder="예: 2" min="1" step="1" /></label>
-    </div>
-    <button class="btn btn-primary sf-go" id="sfGo">이 조건으로 진단 시작 ${I.arrow}</button>
-  </div>`;
+  await aiSay(`좋아요. 바로 조사를 시작할게요. 진단 중에 더 필요한 정보가 있으면 그때 여쭤볼게요.`, 500);
+  startDiagnose(S.active);
 }
 
-// 진단 시작 (연면적·층수 확정 후)
-function beginDiagnose(area, floors) {
-  const c = S.active;
-  $$('[data-role="scale"]').forEach((n) => { const m = n.closest(".msg"); (m || n).remove(); });
-  if (c.msgs) c.msgs = c.msgs.filter((m) => !(m.role === "node" && /data-role="scale"/.test(m.html)));
-  c.floor_area = area; c.floor_count = floors;
-  pushUser(`연면적 ${area}㎡ · ${floors}층`);
+// 진단 시작 — 주소+용도만 전송(면적·층수 미정; 에이전트가 규모·작성주체·주차 판정에 필요하면 request_human_input으로 요청)
+function startDiagnose(c) {
   setStage(2);
-  const qs = new URLSearchParams({ address: c.loc.address, use_type: c.use_type || "근린생활시설", floor_area: String(area), floor_count: String(floors) });
+  const qs = new URLSearchParams({ address: c.loc.address, use_type: c.use_type || "근린생활시설" });
   runDiagnoseStream("/diagnose/stream?" + qs.toString());
 }
 
@@ -1060,14 +1045,10 @@ async function rediagnose() {
   closePanel();
   await aiSay(`<b>${esc(c.loc.address)}</b> 기준으로 다시 진단할게요.`, 400);
   setStage(2);
-  const area = c.floor_area != null ? c.floor_area : "";
-  const floors = c.floor_count != null ? c.floor_count : "";
   const params = { address: c.loc.address, use_type: c.use_type || "근린생활시설" };
-  if (area !== "") params.floor_area = String(area);
-  if (floors !== "") params.floor_count = String(floors);
-  // floor_area/count는 백엔드 필수 — 없으면 기본 보정(없으면 인터럽트로 다시 물음)
-  if (params.floor_area == null) params.floor_area = "100";
-  if (params.floor_count == null) params.floor_count = "1";
+  // 면적·층수 강제 안 함 — 이전 진단서 확정됐으면 재사용, 없으면 에이전트가 다시 물음
+  if (c.floor_area != null) params.floor_area = String(c.floor_area);
+  if (c.floor_count != null) params.floor_count = String(c.floor_count);
   runDiagnoseStream("/diagnose/stream?" + new URLSearchParams(params).toString());
 }
 
@@ -1077,16 +1058,6 @@ async function rediagnose() {
 function wireDynamic() {
   $$(".qa[data-use]").forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => chooseUse(b.dataset.use, b.dataset.name); });
   $$('[data-act="openpanel"]').forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => { if (S.active) { renderPanel(S.active); openPanel(); } }; });
-  $$("#sfGo").forEach((b) => {
-    if (b._w) return; b._w = 1;
-    b.onclick = () => {
-      const form = b.closest(".scale-form");
-      const a = parseFloat($("#sfArea", form).value);
-      const f = parseInt($("#sfFloors", form).value, 10);
-      if (!(a > 0)) { $("#sfArea", form).focus(); return; }
-      beginDiagnose(a, f > 0 ? f : 1);
-    };
-  });
   wireTerms();
 }
 

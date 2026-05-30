@@ -4,14 +4,16 @@ import uuid
 from langchain_core.messages import HumanMessage
 
 
-def fresh_state(address, use_type, floor_area, floor_count):
+def fresh_state(address, use_type, floor_area=None, floor_count=None):
+    scale_txt = f"연면적 {floor_area}㎡, {floor_count}층, " if floor_area is not None else ""
     msg = HumanMessage(
-        f"주소 {address}. 용도={use_type}, 연면적 {floor_area}㎡, {floor_count}층, 신축. "
+        f"주소 {address}. 용도={use_type}, {scale_txt}신축. "
         f"geocode부터 시작해 입지·행위제한·조례·서류·규모·작성주체를 조사하라.")
     return {
         "messages": [msg],
         "address": address, "use_type": use_type,
-        "floor_area": float(floor_area), "floor_count": int(floor_count), "work_type": "신축",
+        "floor_area": float(floor_area) if floor_area is not None else None,
+        "floor_count": int(floor_count) if floor_count is not None else None, "work_type": "신축",
         # operator.add 누적 필드 전부 pre-init(미초기화 시 누적 오류 — 검수 검증)
         "reg_overlaps": [], "uijae": [], "documents": [], "reg_effects": [], "jorye_verdicts": [],
         "citations": [], "abstentions": [], "_toolcalls": [], "_steps": 0,
