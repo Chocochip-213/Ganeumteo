@@ -47,6 +47,13 @@
   .answer-msg .am-open { display: inline-flex; align-items: center; gap: 7px; margin-top: 13px; border: none; border-radius: 11px; padding: 10px 15px; font-size: 14px; font-weight: 700; color: #fff; background: var(--sky-500); transition: background var(--t-fast) var(--ease-out); }
   .answer-msg .am-open:hover { background: var(--sky-600); }
   .answer-msg .am-open:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+  .answer-msg .am-open.open { background: var(--sky-600); }
+  .answer-msg .am-detail { margin-top: 14px; display: flex; flex-direction: column; gap: 11px; border-top: 1px solid var(--border-1); padding-top: 14px; }
+  .answer-msg .am-detail[hidden] { display: none; }
+  .answer-msg .am-detail .card, .answer-msg .am-detail .verdict-card { max-width: 100%; }
+  .think-done { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; font-weight: 700; color: var(--fg-2); }
+  .think-done .am-open { margin-top: 0; padding: 6px 12px; font-size: 13px; font-weight: 600; color: var(--sky-600); background: var(--sky-50); border: 1px solid var(--sky-200); border-radius: 9px; display: inline-flex; align-items: center; gap: 6px; transition: background var(--t-fast) var(--ease-out); }
+  .think-done .am-open:hover { background: var(--sky-100); }
 
   /* ── 우측 결과 패널 (ChatGPT 캔버스식 슬라이드) ── */
   .rp-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.32); z-index: 110; opacity: 0; pointer-events: none; transition: opacity var(--t-base) var(--ease-out); }
