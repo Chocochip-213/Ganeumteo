@@ -148,16 +148,32 @@ def _ordin_bodytext(sigungu, zone):
 
 @tool
 def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """지자체 도시계획조례서 '{zone} 건축가능 별표' BodyText 추출(zlib -15). 멀티홉 1홉."""
+    """지자체 도시계획조례 '{zone} 건축가능 별표' BodyText. 사전인덱스 HIT 우선→MISS면 라이브 추출. 멀티홉 1홉."""
+    # 가늠터 RAG: 사전인덱싱 HIT-first (infra 미연결/MISS/예외면 조용히 라이브 폴백 — Command 형태 불변)
+    try:
+        from infra.ordin_rag import lookup_ordin
+        hit = lookup_ordin(sigungu, zone)
+    except Exception:
+        hit = None
+    if hit:
+        body = hit["body"]
+        art = f"{hit['byeolpyo_no']} {str(hit['byeolpyo_title'])[:30]}"
+        cite = Citation(source="ordin", law_name=hit["ordin_name"], article=art,
+                        quote=body[:110], extract_method="인덱스청크").model_dump()
+        return Command(update={"citations": [cite], "_delegated": True, "doc_index_hit": True,
+                               "_toolcalls": ["ordin_byeolpyo_fetch"],
+                               "messages": [_tm(f"[조례 별표 BodyText(인덱스):{art}]\n{body[:2500]}", tool_call_id)]})
+    # ── 라이브 폴백(기존 경로 — 불변) ──
     text, meta = _ordin_bodytext(sigungu, zone)
     if not text:
         return Command(update={"jorye_verdicts": [JoryeVerdict(ordin_name=meta.get("조례명"), verdict="확인필요",
                                reason="별표 추출 실패(미인덱싱/hwpx)").model_dump()],
-                               "_toolcalls": ["ordin_byeolpyo_fetch"],
+                               "doc_index_hit": False, "_toolcalls": ["ordin_byeolpyo_fetch"],
                                "messages": [_tm(f"조례 별표 추출 실패: {meta}", tool_call_id)]})
-    cite = Citation(source="ordin", law_name=meta["조례명"], article=meta["별표"], quote=text[:110]).model_dump()
+    cite = Citation(source="ordin", law_name=meta["조례명"], article=meta["별표"], quote=text[:110],
+                    extract_method="BodyText").model_dump()
     # 멀티홉 본문을 ToolMessage로 → (실 LLM) agent가 호목참조 읽고 다음 홉 결정
-    return Command(update={"citations": [cite], "_delegated": True, "_toolcalls": ["ordin_byeolpyo_fetch"],
+    return Command(update={"citations": [cite], "_delegated": True, "doc_index_hit": False, "_toolcalls": ["ordin_byeolpyo_fetch"],
                            "messages": [_tm(f"[조례 별표 BodyText:{meta['별표']}]\n{text[:2500]}", tool_call_id)]})
 
 
