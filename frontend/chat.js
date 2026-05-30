@@ -481,7 +481,7 @@ function startDiagnose(c) {
 //  ChatGPT식: 채팅엔 접힌 "검토 중…" 1개(현재 단계 1줄만 subtle 업데이트).
 //  도구호출·사고·근거 등 모든 trace 이벤트는 c.trace[]에 모아 우측 패널용으로만 사용.
 // ============================================================
-let _es = null;
+// 스트림 핸들(EventSource)은 전역이 아니라 방별 c._es로 귀속 — 방 전환해도 타 방 스트림 안 죽음(검수 EF-1)
 
 // SSE 이벤트 1건을 c.trace에 누적(채팅엔 렌더 안 함). 우측 '상세 플로우' 원천.
 function pushTrace(c, ev) {
@@ -543,33 +543,33 @@ function _q(s, n) { s = String(s == null ? "" : s).replace(/\s+/g, " ").trim(); 
 
 function runDiagnoseStream(url, followup) {
   const c = S.active;
-  if (_es) { try { _es.close(); } catch (e) {} _es = null; }
+  if (c._es) { try { c._es.close(); } catch (e) {} c._es = null; }   // 이 방의 기존 스트림만 닫음(타 방 보존)
   if (!followup) { c.trace = []; c.result = null; }   // 후속질문이면 기존 진단 결과·트레이스 유지
   c._streaming = true;   // 진행중 표시 — 다른 방 갔다 와도 openConvo가 '분석 중' 복원
   const think = makeThinking();
   c._think = think;
 
-  const es = new EventSource(url); _es = es;
+  const es = new EventSource(url); c._es = es;
   es.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
     const k = ev && ev.kind;
     if (!k) return;
-    if (k === "interrupt") { try { es.close(); } catch (_) {} _es = null; showInterrupt(ev.detail, think); return; }
-    if (k === "done") { try { es.close(); } catch (_) {} _es = null; pushTrace(c, ev); fetchResult(c, think, followup); return; }
+    if (k === "interrupt") { try { es.close(); } catch (_) {} c._es = null; c._streaming = false; showInterrupt(ev.detail, think, c); return; }
+    if (k === "done") { try { es.close(); } catch (_) {} c._es = null; pushTrace(c, ev); fetchResult(c, think, followup); return; }
     handleTraceEvent(c, ev, think);
   };
   es.onerror = () => {
-    if (_es) { try { _es.close(); } catch (_) {} _es = null; }
-    // 결과가 이미 받아졌으면 표시, 아니면 안내
+    if (c._es) { try { c._es.close(); } catch (_) {} c._es = null; }
+    // 결과가 이미 받아졌으면 표시, 아니면 안내(보고 있는 방일 때만 DOM 갱신 — 검수 EF-5)
     if (c.threadId) fetchResult(c, think, followup);
-    else { think.remove(); aiSay("진단 연결이 끊어졌어요. 잠시 후 ‘주소 변경’으로 다시 시도하거나 입력을 확인해 주세요.", 400); }
+    else { c._streaming = false; if (c === S.active) { think.remove(); aiSay("진단 연결이 끊어졌어요. 잠시 후 ‘주소 변경’으로 다시 시도하거나 입력을 확인해 주세요.", 400); } }
   };
 }
 
 // 인터럽트(HITL) — fields 인라인 입력 → /diagnose/resume.
 // 접힌 검토버블은 그대로 두고(자리 유지), 입력폼만 별도 AI 노드로 노출(대화 인터랙션).
-function showInterrupt(detail, think) {
-  const c = S.active;
+function showInterrupt(detail, think, c) {
+  c = c || S.active;   // 스트림 소유 방 — SSE 비동기 도착 때 다른 방 보고 있어도 올바른 방에 부착(검수 EF-3)
   detail = detail || {};
   pushTrace(c, { kind: "interrupt", node: null, label: "사용자 입력 필요", detail });
   if (think) think.step("답변을 기다리는 중…");
@@ -578,24 +578,25 @@ function showInterrupt(detail, think) {
   const html = esc(q).replace(/\n/g, "<br>")
     + `<div class="hitl-hint">${I.info} 아래 채팅창에 편하게 답해 주세요. 그만하려면 “중단”이라고 입력하면 돼요.</div>`;
   c.msgs.push({ role: "ai", html });
-  appendRaw({ role: "ai", html }); scrollBottom(); wireTerms();
+  if (c === S.active) { appendRaw({ role: "ai", html }); scrollBottom(); wireTerms(); }   // 보고 있는 방일 때만 DOM
   c._hitl = { thread_id: c.threadId, think };   // 다음 채팅 입력을 resume로 라우팅(freeReply가 봄)
 }
 
 // resume도 같은 검토버블에 이어붙임(trace 누적 + 1줄 갱신).
 function resumeStream(url, think) {
   const c = S.active;
-  if (_es) { try { _es.close(); } catch (e) {} _es = null; }
+  if (c._es) { try { c._es.close(); } catch (e) {} c._es = null; }
   if (!think || !think.wrap || !think.wrap.isConnected) think = c._think = makeThinking();
-  const es = new EventSource(url); _es = es;
+  c._streaming = true;
+  const es = new EventSource(url); c._es = es;
   es.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
     const k = ev && ev.kind; if (!k) return;
-    if (k === "interrupt") { try { es.close(); } catch (_) {} _es = null; return showInterrupt(ev.detail, think); }
-    if (k === "done") { try { es.close(); } catch (_) {} _es = null; pushTrace(c, ev); return fetchResult(c, think); }
+    if (k === "interrupt") { try { es.close(); } catch (_) {} c._es = null; c._streaming = false; return showInterrupt(ev.detail, think, c); }
+    if (k === "done") { try { es.close(); } catch (_) {} c._es = null; pushTrace(c, ev); return fetchResult(c, think); }
     handleTraceEvent(c, ev, think);
   };
-  es.onerror = () => { if (_es) { try { _es.close(); } catch (_) {} _es = null; } fetchResult(c, think); };
+  es.onerror = () => { if (c._es) { try { c._es.close(); } catch (_) {} c._es = null; } if (c.threadId) fetchResult(c, think); else c._streaming = false; };
 }
 
 // ============================================================
@@ -606,6 +607,7 @@ async function fetchResult(c, think, followup) {
   let j;
   try {
     const r = await fetch("/diagnose/result?thread_id=" + encodeURIComponent(c.threadId));
+    if (!r.ok) throw new Error("HTTP " + r.status);   // 4xx/5xx 본문을 정상 JSON처럼 처리하던 것 차단(검수 EF-8)
     j = await r.json();
   } catch (e) { if (think) think.remove(); await aiSay("결과를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.", 400); return; }
   c._streaming = false;                 // 진행 종료
