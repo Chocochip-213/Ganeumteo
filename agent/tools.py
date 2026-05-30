@@ -128,9 +128,17 @@ def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
         v, dele = "조례확인필요", True         # 금지=입지제한/조례위임 가능성
     else:
         v, dele = "조례확인필요", True         # 빈값·조건=조례 위임(조건부는 조례에서 확인)
-    cites = [Citation(source="data", law_name="행위제한(국토부 1613000)", article=d["ref_law"],
-                      quote=f"{d.get('node', '')} → {d['reg']}").model_dump()
-             for d in det if d.get("ref_law")]   # 근거조항(LU_REF_LAW_NM1) 인용 — grounding 복구
+    # 인용 정리: 같은 (조항·시설)끼리 묶어 중복 UQ코드 제거 + 가능/금지 혼재(용도지역 중첩)는 한 줄로 정직 표기
+    _grp = {}                                    # (ref_law,node) → set(reg)
+    for d in det:
+        if d.get("ref_law"):
+            _grp.setdefault((d["ref_law"], d.get("node", "")), set()).add(d["reg"])
+    cites = []
+    for (ref_law, node), regs in _grp.items():
+        q = (f"{node} → 가능·금지 혼재(용도지역 중첩)"
+             if any("가능" in r for r in regs) and any("금지" in r for r in regs)
+             else f"{node} → {'/'.join(sorted(regs))}")
+        cites.append(Citation(source="data", law_name="행위제한(국토부 1613000)", article=ref_law, quote=q).model_dump())
     detail = " / ".join(f"{d.get('node', '')}={d['reg']}({d.get('ref_law', '')})" for d in det) or "빈값"
     return Command(update={"act_verdict": v, "act_reg_raw": rg, "_delegated": dele,
                            "citations": cites, "_toolcalls": ["act_landuse"],
