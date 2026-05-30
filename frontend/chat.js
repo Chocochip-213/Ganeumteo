@@ -1146,7 +1146,11 @@ function wireComposer() {
   ta.addEventListener("input", upd);
   ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } });
   send.addEventListener("click", submit);
-  function submit() { const v = ta.value.trim(); if (!v || !S.active) return; ta.value = ""; upd(); pushUser(v); freeReply(v); }
+  function submit() {
+    const v = ta.value.trim(); if (!v || !S.active) return;
+    if (S.active._streaming && !S.active._hitl) return;   // 진행 중(비-HITL)엔 새 진단 시작 막음 — 중복제출이 컨텍스트 날리는 버그 방지
+    ta.value = ""; upd(); pushUser(v); freeReply(v);
+  }
   upd();
 }
 
