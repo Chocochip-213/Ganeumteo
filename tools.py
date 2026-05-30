@@ -62,8 +62,8 @@ def get_parcel(x: float, y: float, tool_call_id: Annotated[str, InjectedToolCall
                or [t for t in toks if t.endswith("구")] or [""])[0]
     road = W.dig(pc, "roadSideCodeNm")
     road = road[0] if road else None
-    cite = Citation(source="vworld", title="필지 LP_PA_CBND_BUBUN",
-                    quote=f"지목 {jimok}, 도로접면 {road}").model_dump()
+    cite = Citation(source="vworld", title="지적(필지) 정보 — 국토교통부 연속지적도",
+                    quote=f"지목 {jimok}" + (f", 도로접면 {road}" if road else "")).model_dump()
     return Command(update={"pnu": pnu, "area_cd": pnu[:5], "jimok": jimok, "sigungu": sigungu,
                            "road_side": road, "citations": [cite], "_toolcalls": ["get_parcel"],
                            "messages": [_tm(f"PNU={pnu} 지목={jimok} 도로접면={road} 시군구={sigungu} ({addr})", tool_call_id)]})
