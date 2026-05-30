@@ -133,6 +133,13 @@
   .ds-cond[open] > summary { color: var(--fg-2); }
   .ds-cond .ds-items { padding-top: 0; opacity: 0.84; }
   .ds-cond .ds-doc:first-child { border-top: none; }
+  /* 조건부 서류 에이전트 판정(해당/비해당/확인필요) */
+  .ds-ap { display: inline-flex; align-items: center; font-size: 10px; font-weight: 800; letter-spacing: 0.03em; border-radius: 5px; padding: 1px 6px; margin-left: 7px; vertical-align: middle; white-space: nowrap; }
+  .ds-ap-y { background: var(--success-bg); color: oklch(0.34 0.10 150); }
+  .ds-ap-n { background: var(--neutral-100); color: var(--fg-3); }
+  .ds-ap-u { background: var(--warm-bg); color: var(--warm-fg); }
+  .ds-areason { font-size: 12px; color: var(--fg-3); line-height: 1.45; margin-top: 3px; }
+  .ds-doc-off { opacity: 0.62; }
 
   /* ── 우측 패널: 상세 추론 플로우(시간순 타임라인) ── */
   .flow-list { position: relative; display: flex; flex-direction: column; }

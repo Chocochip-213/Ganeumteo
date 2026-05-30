@@ -119,6 +119,7 @@ class GaneomteoState(TypedDict):
     # ── 산출 (누적=operator.add)
     uijae: Annotated[list, operator.add]
     documents: Annotated[list, operator.add]
+    cond_assessments: Annotated[list, operator.add]   # 조건부('해당시만') 서류 케이스 판정 — 에이전트가 상태/사용자질의로 결정({stage_key,ho,applies,reason})
     reg_effects: Annotated[list, operator.add]
     jorye_verdicts: Annotated[list, operator.add]
     author: NotRequired[dict]

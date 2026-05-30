@@ -18,6 +18,7 @@ AGENT_SYSTEM = """너는 대한민국 건축 인허가 사전진단 에이전트
  · 일조(시행령§86)는 **전용주거·일반주거지역만** 대상 — 그 외 용도지역(계획관리·녹지·상업·공업)이면 일조 조문 fetch 불필요(용도지역을 네가 게이트). 경관·영향평가 대상 여부는 필요 시 해당 시행령 조문을 law_article_fetch로 읽어 케이스 면적·용도와 대조해 판단하되, 못 읽거나 규모 미달이면 '확인필요'로 둔다.
  · **무하드코딩 철칙**: 율·기준면적·단가·건폐율%는 전부 네가 fetch한 법령 원문에서 읽은 값만 인자로 전달한다. 기억으로 숫자를 지어내지 말 것(없으면 확인필요).
 [docs_for_stage 호출법] stage_key는 반드시 실제 단계명만: '건축허가','착공신고','사용승인' 3개 + record_uijae로 기록한 의제의 stage_key 각각(농지전용/산지전용/개발행위). '의제단계' 같은 placeholder 문자열 금지. 의제 없으면 건축허가·착공신고·사용승인 3개만.
+[조건부 서류 판정 — 중요] docs_for_stage 결과에 "조건부(해당시만 …)"로 표시된 서류는 사용자에게 떠넘기지 말고 네가 해당 여부를 판정하라. 이미 확보한 사실(지목·용도지역·의제·면적·소유형태 등)로 판정되면 판정하고, 사용자만 아는 사실(공동소유 여부·사전결정 신청 여부 등)이 필요하면 request_human_input으로 평이하게 묻고(여러 개면 한 번에 묶어) 그 답으로 판정한다. 그런 뒤 assess_conditional_docs로 각 조건부 호의 applies(yes=해당/no=비해당/unknown)+reason(평이한 근거 한 줄)을 기록하라. 미판정 조건부가 남으면 진단을 끝내지 마라(끝내 모르면 unknown으로라도 기록).
 [병렬·실패] 서로 독립인 읽기 도구(get_land_use·get_land_price)는 한 메시지에 같이 호출해도 된다. 도구 결과가 실패/빈값이면 같은 인자로 재시도하지 말고 원인을 보고 다음 단계로 넘어가라(없는 값은 확인필요로 둔다).
 [사고 노출] 도구를 부르기 전에 "왜 이 도구가 필요한지" 한 문장으로 먼저 말한 뒤 호출하라(사용자가 네 판단 과정을 본다). 단 도구 내부이름(law_byeolpyo_fetch·act_landuse 등)을 그대로 노출하지 말고 평이한 말로 행위를 설명하라(예: "law_byeolpyo_fetch로 확인" → "건축법 별표를 가져와 확인합니다").
 [자기교정] 도구가 'EMPTY …후보:[...]' 같은 걸 주면 그 후보 중 맞는 값으로 인자만 바꿔 다시 호출하라(여러 이름·인자 시도). 한 경로가 막히면 다른 도구·다른 인자를 스스로 고려하라. 끝내 근거를 못 얻으면 확인필요로 둔다.
@@ -75,6 +76,13 @@ def stub_plan(state):
     for sk in need:
         if sk in _DOC_STAGES and sk not in done:
             return _call("docs_for_stage", {"stage_key": sk})
+    # 조건부 판정(stub은 LLM 아니므로 모두 unknown 기록 — 가드 통과용; 실 판정은 LLM 경로)
+    if state.get("documents") and "assess_conditional_docs" not in called:
+        ass = [{"stage_key": d["stage_key"], "ho": it["ho"], "applies": "unknown", "reason": "[stub] 미판정"}
+               for d in state["documents"] for it in (d.get("items") or [])
+               if it.get("conditional") and not any(c in str(it.get("ho", "")) for c in "가나다라마바사아자차카타파하")]
+        if ass:
+            return _call("assess_conditional_docs", {"assessments": ass})
     # 규모·작성주체·규제효과
     if "scale_limits" not in state and "compute_scale" not in called:
         return _call("compute_scale", {"floor_area": state["floor_area"], "floor_count": state["floor_count"]})

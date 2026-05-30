@@ -1029,17 +1029,26 @@ function docStageCard(d, num, isUijae) {
   const groupHtml = (g) => {
     const h = g.head || {};
     const name = String(h.doc_name || "").trim();
+    const ap = h.conditional ? (h.applies || "unknown") : "";   // 에이전트 조건부 판정
+    const apBadge = !h.conditional ? ""
+      : ap === "yes" ? `<span class="ds-ap ds-ap-y">해당</span>`
+      : ap === "no" ? `<span class="ds-ap ds-ap-n">비해당</span>`
+      : `<span class="ds-ap ds-ap-u">확인필요</span>`;
+    const areason = (h.conditional && h.assess_reason) ? `<div class="ds-areason">${esc(String(h.assess_reason))}</div>` : "";
     const mokHtml = g.moks.map((m) => {
       return `<div class="ds-mok"><span class="mbar"></span><span class="dtxt">${esc(String(m.doc_name || "").trim())}</span>${formLink(m, "양식")}</div>`;
     }).join("");
-    return `<div class="ds-doc"><span class="dchk">${I.check}</span><span class="dtxt">${esc(name) || "(서류명 없음)"}</span>${formLink(h, "양식 받기")}</div>${mokHtml}`;
+    return `<div class="ds-doc${ap === "no" ? " ds-doc-off" : ""}"><span class="dchk">${I.check}</span><span class="dtxt">${esc(name) || "(서류명 없음)"}${apBadge}${areason}</span>${formLink(h, "양식 받기")}</div>${mokHtml}`;
   };
 
-  // 필수(항상 제출) / 조건부(해당 시만) 분리 — 호 전수 덤프 대신 정직하게
-  const must = groups.filter((g) => !(g.head && g.head.conditional));
-  const cond = groups.filter((g) => g.head && g.head.conditional);
-  const mustHtml = must.map(groupHtml).join("");
-  const condHtml = cond.map(groupHtml).join("");
+  // 에이전트 판정 반영: 제출(필수 + 해당yes) / 확인필요(unknown) / 해당없음(no=제출 불요)
+  const _ap = (g) => (g.head && g.head.conditional) ? (g.head.applies || "unknown") : "must";
+  const submit = groups.filter((g) => _ap(g) === "must" || _ap(g) === "yes");
+  const check = groups.filter((g) => _ap(g) === "unknown");
+  const off = groups.filter((g) => _ap(g) === "no");
+  const submitHtml = submit.map(groupHtml).join("");
+  const checkHtml = check.map(groupHtml).join("");
+  const offHtml = off.map(groupHtml).join("");
 
   // 주신청서 양식 = 이 단계에서 직접 받아 작성하는 핵심 서식 → 최상단 강조 다운로드
   const applyHtml = (ok && (d.apply_hwp || d.apply_pdf))
@@ -1050,10 +1059,10 @@ function docStageCard(d, num, isUijae) {
   const [where, purl] = submitPortal(stage);
   const submitLink = `<a class="ds-link" href="${esc(purl)}" target="_blank" rel="noreferrer">${I.pin} ${esc(where)} 제출</a>`;
 
-  // 부제: 필수 N · 해당시 M — 개수의 의미를 정직하게
+  // 부제: 제출 N · 확인필요 M · 해당없음 K — 에이전트 판정 반영
   const lawLine = [law, article].filter(Boolean).join(" ");
   const sub = ok
-    ? `${esc(lawLine)}${lawLine ? " · " : ""}필수 ${must.length}건${cond.length ? ` · 해당 시 ${cond.length}건` : ""}`
+    ? `${esc(lawLine)}${lawLine ? " · " : ""}제출 ${submit.length}건${check.length ? ` · 확인필요 ${check.length}건` : ""}${off.length ? ` · 해당없음 ${off.length}건` : ""}`
     : `${esc(lawLine || "시행규칙")} · 자동 조회 안 됨`;
 
   // 시점·의미: 에이전트 생성 한 줄(when_note) 우선, 없으면 본법 조문제목 — hover시 본법 원문 인용(when_quote)
@@ -1078,8 +1087,9 @@ function docStageCard(d, num, isUijae) {
     </div>
     ${whenHtml}
     ${applyHtml ? `<div class="ds-apply-wrap">${applyHtml}</div>` : ""}
-    ${ok && mustHtml ? `<div class="ds-items">${mustHtml}</div>` : ""}
-    ${ok && condHtml ? `<details class="ds-cond"><summary>${I.cond}해당 시에만 제출 · ${cond.length}건</summary><div class="ds-items">${condHtml}</div></details>` : ""}
+    ${ok && submitHtml ? `<div class="ds-items">${submitHtml}</div>` : ""}
+    ${ok && checkHtml ? `<details class="ds-cond" open><summary>${I.cond}직접 확인 필요 · ${check.length}건</summary><div class="ds-items">${checkHtml}</div></details>` : ""}
+    ${ok && offHtml ? `<details class="ds-cond ds-cond-off"><summary>${I.cond}해당 없음 · 제출 불요 · ${off.length}건</summary><div class="ds-items">${offHtml}</div></details>` : ""}
     ${!ok ? `<div class="ds-na-note">${I.bang}<span>이 단계 서류는 자동 조회가 되지 않았어요. 발급처(${esc(where)})에서 직접 확인하세요. <b>서류가 없다는 뜻은 아니에요.</b></span></div>` : ""}
     <div class="ds-links">${lawLink}${submitLink}</div>
   </div>`;

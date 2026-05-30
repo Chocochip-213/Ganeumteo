@@ -379,8 +379,34 @@ def docs_for_stage(stage_key: str, when_note: str = "", *, tool_call_id: Annotat
                    when_quote=r.get("when_quote", ""),
                    apply_title=af.get("제목", ""), apply_hwp=af.get("hwp", ""), apply_pdf=af.get("pdf", ""),
                    items=items).model_dump()
+    # 조건부(해당시만 제출) 최상위 호만 추출 — 에이전트가 케이스로 판정하도록 ToolMessage에 노출(목은 부모 호에 포함)
+    cond_top = [f"{it['ho']} {it['doc_name'][:24]}" for it in items
+                if it.get("conditional") and not any(c in it["ho"] for c in "가나다라마바사아자차카타파하")]
+    msg = f"{stage_key} 첨부 {r['건수']}호 전수({r['법령']} {r['조']})"
+    if cond_top:
+        msg += " · 조건부(해당시만, 케이스 판정 필요 — assess_conditional_docs): " + "; ".join(cond_top)
     return Command(update={"documents": [sd], "_toolcalls": ["docs_for_stage"],
-                           "messages": [_tm(f"{stage_key} 첨부 {r['건수']}호 전수({r['법령']} {r['조']})", tool_call_id)]})
+                           "messages": [_tm(msg, tool_call_id)]})
+
+
+@tool
+def assess_conditional_docs(assessments: list, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+    """조건부('해당 시에만 제출') 서류를 케이스로 판정해 기록(docs_for_stage가 ToolMessage에 알려준 조건부 호마다 1건).
+    assessments=[{stage_key, ho, applies, reason}].
+      applies: 'yes'(해당=제출 필요) | 'no'(비해당=제출 불요) | 'unknown'(판단불가→확인필요).
+      판정법: 이미 확보한 사실(지목·용도지역·의제·면적·소유형태 등)로 판정되면 그걸로 결정. 사용자만 아는 사실(공동소유 여부·사전결정 신청 여부 등)이 필요하면 먼저 request_human_input으로 평이하게 묻고(여러 개면 한 번에 묶어) 그 답으로 판정. 끝내 모르면 'unknown'.
+      reason: 판정 근거 한 줄(사용자가 읽을 평이한 말; 법 조문이름 나열 금지)."""
+    rows = []
+    for a in (assessments or []):
+        if not isinstance(a, dict):
+            continue
+        ap = str(a.get("applies", "unknown")).lower()
+        if ap not in ("yes", "no", "unknown"):
+            ap = "unknown"
+        rows.append({"stage_key": str(a.get("stage_key", "")), "ho": str(a.get("ho", "")),
+                     "applies": ap, "reason": str(a.get("reason", ""))[:200]})
+    return Command(update={"cond_assessments": rows, "_toolcalls": ["assess_conditional_docs"],
+                           "messages": [_tm(f"조건부 서류 {len(rows)}건 판정", tool_call_id)]})
 
 
 @tool
@@ -561,7 +587,7 @@ def request_human_input(question: str, fields: list, tool_call_id: Annotated[str
 
 
 TOOLS = [geocode, get_parcel, get_land_use, get_land_price, act_landuse,
-         ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, compute_scale,
+         ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, compute_scale,
          compute_envelope, parking_quota, levy_estimate,
          author_rule_tool, reg_effect_resolve_tool, record_uijae, record_ordinance_ruling,
          request_human_input]

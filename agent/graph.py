@@ -78,6 +78,14 @@ def completeness_guard(state):
         need = {"건축허가", "착공신고", "사용승인"} | {u.get("stage_key") for u in state.get("uijae", [])}
         if not need.issubset(doc_stages):
             miss.append("서류전수:" + ",".join(sorted(need - doc_stages)))
+        # 조건부('해당시만') 서류 미판정 검사 — 에이전트가 케이스로 판정(필요시 사용자 질의)해야 종료(최상위 호만, 목 제외)
+        _mok = "가나다라마바사아자차카타파하"
+        cond_keys = {(d.get("stage_key"), it.get("ho")) for d in state.get("documents", [])
+                     for it in (d.get("items") or [])
+                     if it.get("conditional") and not any(c in str(it.get("ho", "")) for c in _mok)}
+        assessed = {(a.get("stage_key"), a.get("ho")) for a in state.get("cond_assessments", [])}
+        if cond_keys - assessed:
+            miss.append(f"조건부판정:{len(cond_keys - assessed)}건")
     if miss and (state.get("_steps", 0) - state.get("_turn_base_steps", 0)) < _GUARD_BOUNCE_CAP and not stalled:
         return {"_incomplete": True, "messages": [HumanMessage(f"아직 미확인: {miss}. 해당 도구로만 마저 조회하고, 끝나면 도구 없이 '완료'라 답하라.")]}
     if miss:   # 캡 도달 — 더 못 채움 → 기권 사유로 남기고 진행
@@ -168,6 +176,17 @@ def build_reasoning(state):
 
 def compose(state):
     """진단 카드 조립(부록 D1.2). 사실 재생성 없이 State 값만. (실 LLM이면 서술 강화)."""
+    _ca = {(a.get("stage_key"), a.get("ho")): a for a in state.get("cond_assessments", [])}
+    def _doc_items(d):   # 조건부 서류 항목에 에이전트 판정(applies·assess_reason) 병합
+        out = []
+        for it in (d.get("items") or []):
+            it2 = dict(it)
+            if it.get("conditional"):
+                a = _ca.get((d.get("stage_key"), it.get("ho")))
+                if a:
+                    it2["applies"] = a.get("applies"); it2["assess_reason"] = a.get("reason")
+            out.append(it2)
+        return out
     card = {
         "verdict": state.get("verdict"),
         "legal_reasoning": state.get("legal_reasoning"),
@@ -177,7 +196,7 @@ def compose(state):
                        "when_note": d.get("when_note", ""), "when_law": d.get("when_law", ""),
                        "when_title": d.get("when_title", ""), "when_quote": d.get("when_quote", ""),
                        "apply_title": d.get("apply_title", ""), "apply_hwp": d.get("apply_hwp", ""),
-                       "apply_pdf": d.get("apply_pdf", ""), "items": d.get("items", [])}
+                       "apply_pdf": d.get("apply_pdf", ""), "items": _doc_items(d)}
                       for d in state.get("documents", [])],
         "scale_limits": state.get("scale_limits"),   # compute_scale·compute_envelope 공용(envelope 3필드 포함)
         "parking_req": state.get("parking_req"),       # 부설주차 N대(parking_quota)
