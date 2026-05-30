@@ -538,7 +538,7 @@ def record_ordinance_ruling(
 
 @tool
 def request_human_input(question: str, fields: list, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """사용자 확정 입력 요청(연면적·층수·용도). interrupt로 중단→Command(resume) 재개. 부록 G2.2."""
+    """사용자 확정 입력 요청. 물을 건 **사용자가 직접 아는 사실뿐**(용도·연면적·층수). 의제·용도분류·토지 별도행위·산지전용 여부 같은 법적 판단은 네가 지목·용도지역 데이터로 결정하고 사용자에게 묻지 마라. 질문은 **채팅으로 답하게 평이하게** — '아래 중 체크'·폼·법적분류 선택지 전제 금지(선택지가 꼭 필요하면 질문 문장 안에 풀어라). interrupt로 중단→Command(resume) 재개."""
     from langgraph.types import interrupt
     ans = interrupt({"type": "need_input", "question": question, "fields": fields})
     if isinstance(ans, dict) and ans.get("type") == "reject":
