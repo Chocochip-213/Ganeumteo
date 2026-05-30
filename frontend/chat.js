@@ -625,6 +625,14 @@ async function fetchResult(c, think) {
     j = await r.json();
   } catch (e) { if (think) think.remove(); await aiSay("결과를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.", 400); return; }
   c.result = j;
+  const _ret = j._return || {};
+  if (_ret.status === "대화" || _ret.chat) {   // 클로드식 트리아지 — 진단 아닌 대화 응답(인사·잡담·되물음). 프론트는 백엔드 flag만 봄(휴리스틱 0)
+    if (think) think.remove();
+    await aiSay((esc(_ret.chat || "무엇을 어디에 짓고 싶으신지 알려주세요.")).replace(/\n/g, "<br>"), 200);
+    c.use_type = ""; c.result = null;   // 용도 미확정·진단결과 아님 → 다음 입력이 새 진단, 카드/패널 없음
+    persist();
+    return;
+  }
   // 입지 메타를 상담 loc에 반영(사이드바·헤더 갱신)
   if (j.zone) c.loc.zone = j.zone;
   if (j.jimok) c.loc.jimok = j.jimok;

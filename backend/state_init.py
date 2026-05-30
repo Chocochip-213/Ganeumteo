@@ -7,8 +7,9 @@ from langchain_core.messages import HumanMessage
 def fresh_state(address, use_type, floor_area=None, floor_count=None):
     scale_txt = f"연면적 {floor_area}㎡, {floor_count}층, " if floor_area is not None else ""
     msg = HumanMessage(
-        f"주소 {address}. 용도={use_type}, {scale_txt}신축. "
-        f"geocode부터 시작해 입지·행위제한·조례·서류·규모·작성주체를 조사하라.")
+        f"주소 {address}. 용도='{use_type}', {scale_txt}신축. "
+        f"이게 건축물·용도·인허가 문의면 geocode부터 진단(입지·행위제한·조례·서류·규모·작성주체)을 진행하고, "
+        f"단순 인사·잡담·건축과 무관한 말이면 도구를 부르지 말고 평이하게 무엇을 어디에 짓고 싶은지 되물어라.")
     return {
         "messages": [msg],
         "address": address, "use_type": use_type,
