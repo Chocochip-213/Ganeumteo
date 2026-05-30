@@ -2,10 +2,30 @@
 """ReAct 그래프 — 명세 부록 G1. agent ⇄ tools 루프 + 완결성 가드 + build_reasoning + compose + finalize/abstain."""
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
-from langchain_core.messages import HumanMessage
+from langgraph.types import Command
+from langchain_core.messages import HumanMessage, ToolMessage
 from state import GaneomteoState
 from tools import TOOLS
 from agent import make_agent_node
+
+
+def _wrap_tool_call(request, execute):
+    """도구 예외를 <tool_use_error> tool_result + abstention으로 환류(bare throw 금지) — 18툴 일괄 예외안전.
+    스키마검증(ToolInvocationError)은 execute가 이미 메시지화하니 통과, 그 외 예외(KeyError·API 비정상 등)만 잡아
+    모델이 읽고 자기교정할 결과로 돌린다. 배치 크래시·dangling tool_use 제거 + abstention으로 sse가 '확인필요' 정직 노출."""
+    tc = request.tool_call
+    name = tc.get("name", "")
+    if request.tool is None:                          # 미등록/오타 도구명
+        return ToolMessage(f"<tool_use_error>알 수 없는 도구 '{name}' — 등록된 도구명으로 다시 호출하라</tool_use_error>",
+                           tool_call_id=tc["id"], name=name)
+    try:
+        return execute(request)
+    except Exception as e:                            # 스키마 외 예외 → 크래시 대신 정직 환류
+        em = f"{type(e).__name__}: {str(e) or repr(e)}"[:300]
+        return Command(update={
+            "messages": [ToolMessage(f"<tool_use_error>{em}</tool_use_error>", tool_call_id=tc["id"], name=name)],
+            "abstentions": [{"node": name, "사유": f"도구 예외 {type(e).__name__}"}],
+            "_toolcalls": [name]})   # 시도 기록 → 가드·stub 무한 재호출 방지(fail-closed abstain)
 
 
 _STEP_HARDCAP = 24      # agent 방문 하드캡(무한루프 방지)
@@ -180,7 +200,7 @@ def build_graph():
         return r
     b = StateGraph(GaneomteoState)
     b.add_node("agent", agent_node)
-    b.add_node("tools", ToolNode(TOOLS))            # Command(update) 자동 적용
+    b.add_node("tools", ToolNode(TOOLS, wrap_tool_call=_wrap_tool_call))   # 예외→tool_result+abstention 환류(크래시 방지)
     b.add_node("completeness_guard", completeness_guard)
     b.add_node("build_reasoning", build_reasoning)
     b.add_node("compose", compose)
