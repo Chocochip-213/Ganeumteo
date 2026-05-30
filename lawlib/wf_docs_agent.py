@@ -36,6 +36,25 @@ def _law(lawnm):
     _lawcache[lawnm] = j
     return j
 
+# 단계 시점·의미 근거 = 건축법 본법 조(허가/착공/사용승인). 라우팅 시드(법령구조 인덱스) — 사실은 fetch.
+WHEN_SRC = {"건축허가": "11", "착공신고": "21", "사용승인": "22"}
+
+def _when(stage):
+    """단계 시점·의미 = 건축법 본법 해당 조 라이브 fetch. 조문제목=의미, 조문내용+①항=시점 인용(hover용)."""
+    jo = WHEN_SRC.get(stage)
+    if not jo: return {}
+    j = _law("건축법")
+    if not j: return {}
+    for u in _AL(j['법령']['조문']['조문단위']):
+        if isinstance(u, dict) and str(u.get('조문번호')) == jo and u.get('조문여부') == '조문':
+            parts = [_S(u.get('조문내용'))]
+            for h in _AL(u.get('항'))[:1]:
+                if isinstance(h, dict): parts.append(_S(h.get('항내용')))
+            body = ' '.join(' '.join(parts).split())
+            body = re.sub(r"<(개정|신설|본조신설|전문개정)[^>]*>", "", body).strip()   # 개정마커 제거(알려진 주석구조)
+            return {"when_law": f"건축법 제{jo}조", "when_title": _S(u.get('조문제목')), "when_quote": body[:200]}
+    return {}
+
 DL = "https://www.law.go.kr"
 # 별지서식 참조 파서: "별지 제1호의4서식"→(1,4), "별지 제13호서식"→(13,0). 법 작성관례 포맷파싱(과적합 아님).
 _FORM_RE = re.compile(r"별지\s*제(\d+)호(?:의(\d+))?서식")
@@ -106,7 +125,7 @@ def docs_for(stage):
                                         "단서있음": '다만' in mtxt, "조건부": ho_cond or _is_cond(mtxt),
                                         "서식": _ref_form(mtxt, forms)})
             return {"단계": stage, "법령": lawnm, "조": f"제{jo}조{hang or ''}",
-                    "상태": "전수확보", "건수": len(서류), "신청서": 신청서, "서류": 서류}
+                    "상태": "전수확보", "건수": len(서류), "신청서": 신청서, "서류": 서류, **_when(stage)}
     return {"단계": stage, "상태": "확인필요", "사유": f"제{jo}조 조문 못찾음"}
 
 if __name__ == "__main__":

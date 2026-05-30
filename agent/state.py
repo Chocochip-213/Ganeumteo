@@ -38,6 +38,10 @@ class StageDocs(BaseModel):
     stage_key: str
     law: str = ""
     article: str = ""
+    when_note: str = ""                # 이 단계를 '언제' 하는지(에이전트가 건축법 절차 근거로 생성한 한 줄)
+    when_law: str = ""                 # 시점·의미 근거 본법 조(예 '건축법 제21조')
+    when_title: str = ""               # 본법 조문제목(=단계 의미)
+    when_quote: str = ""               # 본법 조문 원문(hover 인용)
     status: str = "전수확보"
     count: int = 0
     apply_title: str = ""              # 주신청서 양식명

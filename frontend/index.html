@@ -84,6 +84,16 @@
   .ds-badge { font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 3px 8px; white-space: nowrap; flex-shrink: 0; }
   .ds-badge.ok { background: var(--success-bg); color: oklch(0.34 0.10 150); }
   .ds-badge.na { background: var(--warm-bg); color: var(--warm-fg); }
+  /* 단계 시점·의미 — 건축법 본법 근거, hover시 원문 인용 */
+  .ds-when { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: -6px 16px 0 55px; padding-bottom: 12px; font-size: 12.5px; line-height: 1.5; }
+  .ds-when-lbl { font-size: 10px; font-weight: 800; letter-spacing: 0.05em; color: var(--sky-700); background: var(--sky-50); border-radius: 5px; padding: 2px 7px; flex-shrink: 0; }
+  .ds-when-t { color: var(--fg-2); font-weight: 600; }
+  .ds-when-u .ds-when-t { color: var(--fg-3); font-weight: 500; }
+  .ds-when-law { font-size: 11px; color: var(--fg-3); }
+  .ds-when-src { position: relative; cursor: help; color: var(--sky-700); font-size: 11.5px; font-weight: 600; border-bottom: 1px dotted var(--sky-600); outline: none; }
+  .ds-when-src .ds-pop { display: none; position: absolute; left: 0; top: calc(100% + 7px); z-index: 40; width: 320px; max-width: 74vw; background: var(--bg-surface); color: var(--fg-1); border: 1px solid var(--border-2); border-radius: 10px; padding: 11px 13px; font-size: 12px; font-weight: 400; line-height: 1.6; box-shadow: var(--shadow-3); white-space: normal; }
+  .ds-when-src .ds-pop::before { content: "건축법 본법 원문"; display: block; font-size: 9.5px; font-weight: 800; letter-spacing: 0.06em; color: var(--fg-3); margin-bottom: 5px; }
+  .ds-when-src:hover .ds-pop, .ds-when-src:focus .ds-pop { display: block; }
   .ds-items { padding: 0 16px 8px; display: flex; flex-direction: column; }
   .ds-doc { display: flex; align-items: flex-start; gap: 9px; padding: 9px 0; border-top: 1px solid var(--border-1); }
   .ds-doc .dchk { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--border-2); background: var(--neutral-50); color: var(--sky-600); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }

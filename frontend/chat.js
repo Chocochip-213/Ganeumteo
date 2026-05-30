@@ -1005,10 +1005,11 @@ function orderedDocs(card) {
 function docCards(card) {
   const docs = orderedDocs(card);
   if (!docs.length) return `<div class="card card-pad"><div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 제출 서류</span></div><p style="font-size:14px;color:var(--fg-3);margin:6px 0 0">서류 단계가 산출되지 않았어요. 관할 기관(해당 시·군·구청 건축과)에 직접 문의가 필요해요.</p></div>`;
-  return docs.map((d, i) => docStageCard(d, i + 1)).join("");
+  const uijaeKeys = new Set(arr(card.uijae).map((u) => u && u.stage_key).filter(Boolean));
+  return docs.map((d, i) => docStageCard(d, i + 1, uijaeKeys.has(String(d.stage || d.stage_key || "")))).join("");
 }
 
-function docStageCard(d, num) {
+function docStageCard(d, num, isUijae) {
   const stage = d.stage || d.stage_key || "단계";
   const ok = d.status === "전수확보";
   const law = d.law || "", article = d.article || "";
@@ -1054,12 +1055,27 @@ function docStageCard(d, num) {
     ? `${esc(lawLine)}${lawLine ? " · " : ""}필수 ${must.length}건${cond.length ? ` · 해당 시 ${cond.length}건` : ""}`
     : `${esc(lawLine || "시행규칙")} · 자동 조회 안 됨`;
 
+  // 시점·의미: 에이전트 생성 한 줄(when_note) 우선, 없으면 본법 조문제목 — hover시 본법 원문 인용(when_quote)
+  const wMain = String(d.when_note || d.when_title || "").trim();
+  const wLaw = String(d.when_law || "").trim();
+  const wQuote = String(d.when_quote || "").trim();
+  let whenHtml = "";
+  if (wMain) {
+    const wsrc = (wLaw && wQuote)
+      ? `<span class="ds-when-src" tabindex="0">${esc(wLaw)} 원문<span class="ds-pop">${esc(wQuote)}</span></span>`
+      : (wLaw ? `<span class="ds-when-law">${esc(wLaw)}</span>` : "");
+    whenHtml = `<div class="ds-when"><span class="ds-when-lbl">언제</span><span class="ds-when-t">${esc(wMain)}</span>${wsrc}</div>`;
+  } else if (isUijae) {
+    whenHtml = `<div class="ds-when ds-when-u"><span class="ds-when-lbl">언제</span><span class="ds-when-t">건축허가 시 함께 처리되는 인허가(의제)</span></div>`;
+  }
+
   return `<div class="doc-stage ${ok ? "" : "na"}">
     <div class="ds-head">
       <div class="ds-num">${num}</div>
       <div class="ds-main"><div class="ds-t">${esc(stage)}</div><div class="ds-law">${sub}</div></div>
       <span class="ds-badge ${ok ? "ok" : "na"}">${ok ? "법정 제출목록" : "확인필요"}</span>
     </div>
+    ${whenHtml}
     ${applyHtml ? `<div class="ds-apply-wrap">${applyHtml}</div>` : ""}
     ${ok && mustHtml ? `<div class="ds-items">${mustHtml}</div>` : ""}
     ${ok && condHtml ? `<details class="ds-cond"><summary>${I.cond}해당 시에만 제출 · ${cond.length}건</summary><div class="ds-items">${condHtml}</div></details>` : ""}
