@@ -114,7 +114,7 @@ def get_land_price(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -
 def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
                 tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """행위제한 1차판정 + 조례위임 감지. data.go.kr 1613000.
-    입력: zone_ucode=get_land_use의 UQ코드 **전부를 콤마로 이어** 그대로(예 UQA001,UQA121 — 상위 generic 코드는 빈값이라 API가 specific 코드에서 행위제한 회수). use_type=**건축법 용도분류상 시설명**(사용자 표현을 건축법 용도로 해석해 전달 — 예 카페→일반음식점, 사무실→업무시설, 다세대→공동주택. API가 이 시설명으로 행위제한 조회). area_cd=get_parcel의 area_cd(PNU 앞5).
+    입력: zone_ucode=get_land_use의 UQ코드 **전부를 콤마로 이어** 그대로(예 UQA001,UQA121 — 상위 generic 코드는 빈값이라 API가 specific 코드에서 행위제한 회수). use_type=**건축법 별표1의 가장 구체적인 세목 시설명**(사용자 표현을 그 세목명으로 해석 — 예 카페→일반음식점, 사무실→업무시설, 다세대→공동주택). **주의: 이 API는 시설명을 부분문자열로 매칭한다** → 넓은 상위분류('운동시설')로 질의하면 엉뚱한 세목('가축용 운동시설')이 substring으로 잡힐 수 있다. 반드시 구체 세목으로 질의하고, 반환된 시설명(NODE_DESC)이 의도한 시설과 다르면 그 결과를 근거로 쓰지 말고 별표1 호목으로 직접 해소하라. area_cd=get_parcel의 area_cd(PNU 앞5).
     반환 act_verdict∈{가능(법령직접), 조례확인필요(혼재), 조례확인필요}. 빈값·혼재=조례위임(_delegated=True) → 단정 말고 ordin_byeolpyo_fetch로 진행."""
     det = W.act_detail(zone_ucode, use_type, area_cd)   # item별 reg+근거조항+시설명 — act가 버리던 근거 보존
     rg = [d["reg"] for d in det]                          # 가부 신호(REG_NM=API 자체 판정 enum; 도구는 읽기만, 단정 아님)
@@ -137,35 +137,65 @@ def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
 
 
 # ── 조례 별표 BodyText (멀티홉 1번째 홉) ─────────────────────
-def _ordin_bodytext(sigungu, zone):
-    s = L.ordin_search(f"{sigungu} 도시계획")
-    items = s.get("items") or []
-    last_nm = ""
-    for it in items:                                   # 후보 조례 순회 — 이름매칭 아니라 'zone 별표 가진 조례'를 고름(일반)
+def _nows(x): return re.sub(r"\s+", "", _S(x))         # 공백 무시 비교(별표제목 '제1종 일반' vs zone '제1종일반')
+
+def _byeolpyo_units(j):
+    bu = j.get("별표", {}).get("별표단위") if isinstance(j.get("별표"), dict) else None
+    if not bu: bu = j.get("별표단위")                    # 응답변형: 별표단위가 j 최상위(서울 등 특별·광역시)
+    if isinstance(bu, dict): bu = [bu]
+    return bu or []
+
+def _pick_zone_byeolpyo(units, zone):
+    zk = _nows(zone)
+    for b in units:                                     # zone+건축가능/불가 든 별표(공백무시 매칭)
+        if not isinstance(b, dict): continue
+        t = _nows(b.get("별표제목"))
+        if zk in t and ("건축할수있는" in t or "건축할수없는" in t):
+            return b
+    return None
+
+def _byeolpyo_body(b):
+    inline = _S(b.get("별표내용")).strip()                # inline 우선(특별·광역시 시 조례는 별표내용에 본문)
+    if inline:
+        return re.sub(r"\s+", " ", inline).strip()
+    url = _S(b.get("별표첨부파일명"))                      # 폴백: 첨부파일(.hwp/.hwpx — 도 산하 시·군은 inline 비고 본문 첨부)
+    if not url: return None
+    raw = None
+    for _ in range(4):
+        try:
+            raw = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Connection": "close"}), timeout=40).read(); break
+        except Exception:
+            time.sleep(1.5)
+    full = L.byeolpyo_text(raw)                          # .hwp(PARA_TEXT 레코드)·.hwpx 자동 — 통째 utf-16 디코드 쓰레기 방지
+    return re.sub(r"\s+", " ", full).strip() if full else None
+
+def _search_zone_byeolpyo(query, locality, zone):
+    """query로 조례 검색 → locality 든 후보(광역 단위 조례 우선) 중 zone 별표 본문을 찾으면 (본문, meta, 광역명)."""
+    cands = [it for it in (L.ordin_search(query).get("items") or []) if (not locality or locality in _S(it.get("자치법규명")))]
+    cands.sort(key=lambda it: 0 if _nows(it.get("지자체기관명")) == _nows(locality) else 1)   # 광역(시·도) 단위 조례 먼저
+    last_nm = ""; wide = ""
+    for it in cands:
         nm = _S(it.get("자치법규명"))
-        if sigungu not in nm:                           # 다른 지자체 배제(입력기반 일반규칙)
-            continue
         last_nm = nm
-        j = L.ordin_service(it.get("자치법규일련번호") or it.get("MST"))
-        bu = j.get("별표", {}).get("별표단위") or []
-        if isinstance(bu, dict): bu = [bu]
-        tgt = next((b for b in bu if isinstance(b, dict) and zone in _S(b.get("별표제목"))
-                    and ("건축할 수 있는" in _S(b.get("별표제목")) or "건축할 수 없는" in _S(b.get("별표제목")))), None)
-        if not tgt:
-            continue                                    # 이 조례엔 해당 용도지역 별표 없음 → 다음 후보
-        url = _S(tgt.get("별표첨부파일명"))
-        raw = None
-        for _ in range(4):
-            try:
-                raw = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Connection": "close"}), timeout=40).read(); break
-            except Exception:
-                time.sleep(1.5)
-        full = L.byeolpyo_text(raw)                      # .hwp(PARA_TEXT 레코드)·.hwpx 자동 — 통째 utf-16 디코드 쓰레기 방지
-        if not full:
-            continue
-        clean = re.sub(r"\s+", " ", full).strip()
-        return clean, {"조례명": nm, "별표": _S(tgt.get("별표번호")) + " " + _S(tgt.get("별표제목"))[:30]}
-    return None, {"조례명": last_nm}
+        wide = wide or (_S(it.get("지자체기관명")).split() or [""])[0]   # 후보 기관명 첫 토큰=광역명(폴백 키)
+        b = _pick_zone_byeolpyo(_byeolpyo_units(L.ordin_service(it.get("자치법규일련번호") or it.get("MST"))), zone)
+        if not b: continue
+        body = _byeolpyo_body(b)
+        if not body: continue
+        return body, {"조례명": nm, "별표": _S(b.get("별표번호")) + " " + _S(b.get("별표제목"))[:30]}, wide
+    return None, {"조례명": last_nm}, wide
+
+def _ordin_bodytext(sigungu, zone):
+    body, meta, wide = _search_zone_byeolpyo(f"{sigungu} 도시계획", sigungu, zone)   # 1차: sigungu 그대로(도 산하 시·군)
+    if body:
+        return body, meta
+    toks = _S(sigungu).split()                          # 2차: 광역 폴백 — 자치구는 zone 별표를 시 단위 조례에 위임
+    wide_nm = toks[0] if len(toks) >= 2 else wide        # '서울특별시 강남구'→광역토큰; 단일토큰이면 후보 기관명서 유도
+    if wide_nm and wide_nm != sigungu:
+        body, meta2, _ = _search_zone_byeolpyo(f"{wide_nm} 도시계획", wide_nm, zone)
+        if body:
+            return body, meta2
+    return None, meta
 
 
 @tool
@@ -224,7 +254,9 @@ def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[
         bti = _S(b.get("별표제목"))
         if (numkey and numkey == bno) or (byeolpyo_kw.strip() and byeolpyo_kw.strip() in bti):   # 번호 또는 제목 부분문자열(입력기반 일반규칙만)
             t = re.sub(r"\s+", " ", _S(b.get("별표내용")))
-            cite = Citation(source="law", law_name=law_name, article=_S(b.get("별표번호")), quote=t[:200]).model_dump()
+            _bno = _S(b.get("별표번호")).lstrip("0") or "1"   # "0001"→"1"(표시용)
+            # 인용 quote는 별표 '제목'만(전체 호 raw dump 금지 — 핵심 호목 근거는 조례 판정 인용이 제공)
+            cite = Citation(source="law", law_name=law_name, article=f"별표 {_bno}", quote=_S(b.get("별표제목"))[:60]).model_dump()
             body = t[:20000]   # 별표 본문 전체 노출(건축법 별표1 ~11k자 — gpt-5.2 컨텍스트에 충분). 호 파싱 휴리스틱 안 씀, LLM이 원문 직접 읽음
             tail = "" if len(t) <= 20000 else f"\n\n…[본문 {len(t)}자 중 20000자까지 표시·이후 절단. 더 좁은 별표 번호/제목으로 재호출하거나 끝내 못 찾으면 확인필요로 둬라]"
             return Command(update={"citations": [cite], "_toolcalls": ["law_byeolpyo_fetch"],
@@ -326,8 +358,15 @@ def docs_for_stage(stage_key: str, tool_call_id: Annotated[str, InjectedToolCall
     if r["상태"] != "전수확보":
         return Command(update={"documents": [StageDocs(stage_key=stage_key, status="확인필요").model_dump()],
                                "_toolcalls": ["docs_for_stage"], "messages": [_tm(f"{stage_key} 서류 확인필요", tool_call_id)]})
-    items = [DocItem(ho=d["호"], doc_name=d["서류"], has_proviso=d["단서있음"]).model_dump() for d in r["서류"]]
-    sd = StageDocs(stage_key=stage_key, law=r["법령"], article=r["조"], count=r["건수"], items=items).model_dump()
+    items = [DocItem(ho=d["호"], doc_name=d["서류"], has_proviso=d["단서있음"],
+                     conditional=d.get("조건부", False),
+                     form_title=(d.get("서식") or {}).get("제목", ""),
+                     form_hwp=(d.get("서식") or {}).get("hwp", ""),
+                     form_pdf=(d.get("서식") or {}).get("pdf", "")).model_dump() for d in r["서류"]]
+    af = r.get("신청서") or {}
+    sd = StageDocs(stage_key=stage_key, law=r["법령"], article=r["조"], count=r["건수"],
+                   apply_title=af.get("제목", ""), apply_hwp=af.get("hwp", ""), apply_pdf=af.get("pdf", ""),
+                   items=items).model_dump()
     return Command(update={"documents": [sd], "_toolcalls": ["docs_for_stage"],
                            "messages": [_tm(f"{stage_key} 첨부 {r['건수']}호 전수({r['법령']} {r['조']})", tool_call_id)]})
 
@@ -463,7 +502,9 @@ def reg_effect_resolve_tool(reg_names: List[str], tool_call_id: Annotated[str, I
 # ── agent 판단 커밋 (record_*) ───────────────────────────────
 @tool
 def record_uijae(items: list, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """agent가 지목·입지로 판단한 의제 발동 목록 커밋. items=[{trigger,permit_name,stage_key}]."""
+    """건축허가에 함께 의제처리되는 '별도 인허가'만 커밋(농지전용·산지전용·개발행위·초지전용·사도개설 등 실제 허가/신고). items=[{trigger,permit_name,stage_key}].
+    규제중첩·시설지정(도시계획시설·근린공원·개발제한구역·고도지구·정비구역·과밀억제권역 등)은 의제가 아니다 — 여기 기록하지 마라(그건 reg_effect_resolve_tool/유의사항 대상).
+    stage_key는 docs_for_stage가 첨부서류를 가져올 수 있는 실제 인허가명이어야 한다(서류가 안 나오는 추상 명칭 금지)."""
     ui = [UijaeItem(**{k: v for k, v in it.items() if k in ("trigger", "permit_name", "stage_key")}).model_dump() for it in items]
     return Command(update={"uijae": ui, "_toolcalls": ["record_uijae"],
                            "messages": [_tm(f"의제 {len(ui)}건 기록", tool_call_id)]})

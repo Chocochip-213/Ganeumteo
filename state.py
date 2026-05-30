@@ -28,6 +28,10 @@ class DocItem(BaseModel):
     ho: str
     doc_name: str
     has_proviso: bool = False
+    conditional: bool = False          # 해당시만 제출(법 "~경우로 한정" 등)
+    form_title: str = ""               # 이 호가 별지서식 참조시 양식명
+    form_hwp: str = ""                 # 양식 HWP 다운로드 URL
+    form_pdf: str = ""                 # 양식 PDF 다운로드 URL
 
 
 class StageDocs(BaseModel):
@@ -36,6 +40,9 @@ class StageDocs(BaseModel):
     article: str = ""
     status: str = "전수확보"
     count: int = 0
+    apply_title: str = ""              # 주신청서 양식명
+    apply_hwp: str = ""                # 주신청서 HWP 다운로드 URL
+    apply_pdf: str = ""                # 주신청서 PDF 다운로드 URL
     items: List[DocItem] = Field(default_factory=list)
 
 

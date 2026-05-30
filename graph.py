@@ -3,6 +3,7 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
 from langgraph.types import Command
+from langgraph.errors import GraphBubbleUp   # interrupt(HITL)·control-flow 신호 — 절대 삼키면 안 됨
 from langchain_core.messages import HumanMessage, ToolMessage
 from state import GaneomteoState
 from tools import TOOLS
@@ -20,6 +21,8 @@ def _wrap_tool_call(request, execute):
                            tool_call_id=tc["id"], name=name)
     try:
         return execute(request)
+    except GraphBubbleUp:                             # interrupt(HITL)·control-flow → 전파(삼키면 입력요청 깨짐)
+        raise
     except Exception as e:                            # 스키마 외 예외 → 크래시 대신 정직 환류
         em = f"{type(e).__name__}: {str(e) or repr(e)}"[:300]
         return Command(update={
@@ -168,7 +171,9 @@ def compose(state):
         "legal_reasoning": state.get("legal_reasoning"),
         "uijae": state.get("uijae"),
         "documents": [{"stage": d["stage_key"], "count": d.get("count", 0), "status": d["status"],
-                       "law": d.get("law", ""), "article": d.get("article", ""), "items": d.get("items", [])}
+                       "law": d.get("law", ""), "article": d.get("article", ""),
+                       "apply_title": d.get("apply_title", ""), "apply_hwp": d.get("apply_hwp", ""),
+                       "apply_pdf": d.get("apply_pdf", ""), "items": d.get("items", [])}
                       for d in state.get("documents", [])],
         "scale_limits": state.get("scale_limits"),   # compute_scale·compute_envelope 공용(envelope 3필드 포함)
         "parking_req": state.get("parking_req"),       # 부설주차 N대(parking_quota)
