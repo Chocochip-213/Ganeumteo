@@ -7,6 +7,7 @@
 //  → interrupt→/resume → done → /diagnose/result. 모르는 kind/결측키도 크래시 없이(데이터주도).
 // =========================================================
 import { classifyVerdict, statusKo } from "./verdict.js";
+import { DICT } from "./terms.js";   // 토지이용 용어사전(2025) 663용어 — hover
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -46,7 +47,7 @@ const I = {
 const I_law = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M6 7l-3 6a3 3 0 0 0 6 0z"/><path d="M18 7l-3 6a3 3 0 0 0 6 0z"/><path d="M7 21h10"/></svg>';
 
 // ── 용어 사전 (popover) ──
-const GLOSSARY = {
+const HAND = {   // 손번역 핵심어 — 사전 정의보다 친절, 머지 시 우선
   "용도지역": ["용도지역", "땅마다 정해진 “쓰임새 등급”. 주거·상업·공업 등으로 나뉘고, 지을 수 있는 건물 종류와 크기가 달라져요."],
   "지목": ["지목", "땅의 공식 용도 분류(대지·전·답·임야 등). “대(垈)”는 건물을 지을 수 있는 땅이에요."],
   "도로접면": ["도로접면", "필지가 도로에 닿은 면. 도로에 접해야 건축이 가능하고, 폭·접면 길이에 따라 건축선·진입 조건이 달라져요."],
@@ -69,6 +70,19 @@ const GLOSSARY = {
   "부설주차": ["부설주차", "건물을 지을 때 의무로 함께 설치하는 주차장. 용도·면적에 따라 대수가 정해져요."],
   "부담금": ["부담금", "개발할 때 내는 돈. 농지를 바꾸면 농지보전부담금, 산지면 대체산림조성비 등이 있어요."],
 };
+const GLOSSARY = Object.assign({}, DICT, HAND);   // 토지이용 용어사전 663 + 손번역(손번역 우선)
+// 임베디드 하이라이트용 키(4자+, 긴 것 먼저) — 문장 속 용어 자동 표시(첫 등장만)
+const _TERMKEYS = Object.keys(GLOSSARY).filter((k) => k.length >= 4).sort((a, b) => b.length - a.length);
+function linkifyTerms(plain) {   // 평문 → 용어 span(esc 후 첫 등장 래핑). HTML 입력 금지(평문만).
+  let html = esc(String(plain == null ? "" : plain));
+  for (const k of _TERMKEYS) {
+    const ek = esc(k), idx = html.indexOf(ek);
+    if (idx < 0) continue;
+    if (html.lastIndexOf("<span", idx) > html.lastIndexOf("</span>", idx)) continue;   // 이미 span 안이면 skip
+    html = html.slice(0, idx) + `<span class="term" data-term="${ek}">${ek}</span>` + html.slice(idx + ek.length);
+  }
+  return html;
+}
 function T(key, label) { const g = GLOSSARY[key]; return `<span class="term" data-term="${esc(key)}">${esc(label || (g ? g[0] : key))}</span>`; }
 // GLOSSARY에 있는 토큰이면 용어 span, 아니면 esc
 function maybeTerm(text) { return GLOSSARY[text] ? T(text) : esc(text); }
@@ -942,7 +956,7 @@ function discloseBody(steps, cits) {
     const b = s.basis;
     const cls = !b ? "none" : (b === "vworld" ? "site" : "law");
     const tag = !b ? "자동 조회 안 됨 → 직접 확인 필요" : (b === "vworld" ? "입지 출처(법적 근거 아님)" : "법적 근거: " + esc(b));
-    return `<div class="basis-item"><div class="bc">${!b ? I.bang : I.check}</div><div><div class="bt">${esc(s.kind || "단계")}</div><div class="bd">${esc(s.fact || "")}${s.infer ? " — " + esc(s.infer) : ""}</div><span class="bsrc bsrc-${cls}">${tag}</span></div></div>`;
+    return `<div class="basis-item"><div class="bc">${!b ? I.bang : I.check}</div><div><div class="bt">${maybeTerm(s.kind || "단계")}</div><div class="bd">${linkifyTerms(s.fact || "")}${s.infer ? " — " + linkifyTerms(s.infer) : ""}</div><span class="bsrc bsrc-${cls}">${tag}</span></div></div>`;
   }).join("");
   // citations: 법령 원문 링크(url 있으면), 없으면 law_name으로 law.go.kr
   const citRows = cits.map((c) => {
