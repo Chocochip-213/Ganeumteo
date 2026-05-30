@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """ReAct 도구 — 검증된 research/wf_*.py를 @tool로 래핑. 부록 G2.1: Command(update) 반환.
 사실=tool fetch(원문), 인용 동반, 못 얻으면 확인필요. 내부 로직 전부 실증(wf_*.py)."""
-import sys, re, io, zlib, json, urllib.request, urllib.parse, time, uuid
-from typing import Annotated, Optional, List
+import sys, re, io, zlib, json, urllib.request, urllib.parse, time, uuid, datetime
+from typing import Annotated, Optional, List, Literal
+from pydantic import Field
 from langchain_core.tools import tool, InjectedToolCallId
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
@@ -445,23 +446,17 @@ def record_uijae(items: list, tool_call_id: Annotated[str, InjectedToolCallId]) 
 
 
 @tool
-def record_ordinance_ruling(verdict: str, hojeok_path: str, cited_count: int,
-                            tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """agent 멀티홉 호목해소 결론 커밋. cited_count==0이면 확인필요 강등(환각가드)."""
-    def _nv(x):   # prose→enum. 확인필요 신호 우선(#3 오정규화 방지)
-        x = str(x)
-        if any(k in x for k in ("확인필요", "확인 필요", "확정 불가", "확정할 수 없", "매칭 불가", "추출 실패", "알 수 없", "판단 불가")):
-            return "확인필요"
-        if "불가" in x or "금지" in x:
-            return "불가"
-        if "가능" in x:
-            return "가능"
-        return "확인필요"
-    # 환각가드는 build_reasoning(basis)·route(citations==0→abstain)가 담당 → 여기선 verdict 정규화만
-    v = _nv(verdict)
-    return Command(update={"jorye_verdicts": [JoryeVerdict(verdict=v, reason=hojeok_path[:200]).model_dump()],
+def record_ordinance_ruling(
+        verdict: Annotated[Literal["가능", "불가", "확인필요"], Field(
+            description="조례 별표 호목해소 결론. 가능=제공된 별표 원문 호목이 해당 용도를 명시적으로 허용. "
+                        "불가=원문이 명시적으로 금지. 확인필요=별표 본문 미확보·호목 참조 미해소·근거 불충분 등 판단 불가(기본값, 기권).")],
+        hojeok_path: str, cited_count: int,
+        tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+    """agent 멀티홉 호목해소 결론 커밋. verdict는 위 3개 enum 중 하나만(자유서술 금지).
+    환각가드는 build_reasoning(basis)·route(citations==0→abstain)가 담당 — 여기선 LLM이 커밋한 enum을 그대로 기록."""
+    return Command(update={"jorye_verdicts": [JoryeVerdict(verdict=verdict, reason=hojeok_path[:200]).model_dump()],
                            "_toolcalls": ["record_ordinance_ruling"],
-                           "messages": [_tm(f"조례판정 기록: {v} ({hojeok_path})", tool_call_id)]})
+                           "messages": [_tm(f"조례판정 기록: {verdict} ({hojeok_path})", tool_call_id)]})
 
 
 @tool

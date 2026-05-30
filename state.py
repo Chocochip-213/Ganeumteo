@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """GaneomteoState + Pydantic 타입. 명세 §3.2/§3.1 정규 필드(D0.3)."""
-from typing import Annotated, Optional, List
+from typing import Annotated, Optional, List, Literal
 from typing_extensions import TypedDict, NotRequired
 import operator
 from pydantic import BaseModel, Field
@@ -42,7 +42,7 @@ class StageDocs(BaseModel):
 class JoryeVerdict(BaseModel):
     ordin_name: Optional[str] = None
     byeolpyo: Optional[str] = None
-    verdict: str = "확인필요"
+    verdict: Literal["가능", "불가", "확인필요"] = "확인필요"
     reason: Optional[str] = None
 
 
