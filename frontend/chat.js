@@ -623,6 +623,14 @@ async function fetchResult(c, think, followup) {
   c._streaming = false;                 // 진행 종료
   const live = (c === S.active);         // 지금 이 방을 보고 있나 — DOM 갱신은 이때만
   const _ret = j._return || {};
+  if (_ret.terminal_reason === "llm_error") {   // LLM 실패 — 반쪽 결과 대신 '다시하기'(백엔드 status=재시도필요)
+    if (think) think.remove();
+    const html = `<div class="retry-box"><span class="rb-msg">${I.bang} 일시적 오류로 분석을 마치지 못했어요.</span><button class="retry-btn" data-act="retry">${I.route} 다시 진단</button></div>`;
+    c.msgs.push({ role: "node", html });
+    c.result = null; persist();
+    if (live) { appendRaw({ role: "node", html }); scrollBottom(); }
+    return;
+  }
   if (_ret.status === "대화" || _ret.chat) {   // 클로드식 트리아지 — 대화 응답(인사·잡담·되물음). 백엔드 flag만(휴리스틱 0)
     if (think) think.remove();
     const chatHtml = mdLite(_ret.chat || "무엇을 어디에 짓고 싶으신지 알려주세요.");
@@ -1159,6 +1167,7 @@ function wireDynamic() {
   $$(".qa[data-use]").forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => { if (b.dataset.use) chooseUse(b.dataset.use, b.dataset.name); else { aiSay("어떤 시설을 짓고 싶은지 적어 주세요. (예: 수영장, 학원, 미용실)", 300); const ta = $("#cmpInput"); if (ta) ta.focus(); } }; });
   $$('[data-act="openpanel"]').forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => { if (S.active) { renderPanel(S.active); openPanel(); } }; });
   $$('[data-act="toggle-detail"]').forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => { const d = b.parentElement && b.parentElement.querySelector(".am-detail"); if (d) { d.hidden = !d.hidden; b.classList.toggle("open", !d.hidden); } }; });
+  $$('[data-act="retry"]').forEach((b) => { if (b._w) return; b._w = 1; b.onclick = () => rediagnose(); });   // LLM 실패 '다시 진단'
   wireTerms();
 }
 
