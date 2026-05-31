@@ -58,6 +58,13 @@ class JoryeVerdict(BaseModel):
     reason: Optional[str] = None
 
 
+class VerdictLabel(BaseModel):
+    dimension: str                                    # 판정 축 이름 — LLM이 케이스마다 정함(코드 고정목록 아님)
+    status: Literal["충족", "주의", "확인필요", "불가"] = "주의"   # 축 판정(표시·일관성 가드 어휘)
+    reason: str = ""                                  # 평이한 한 줄 사유
+    basis_seq: List[int] = Field(default_factory=list)   # 근거 citation/step seq
+
+
 class RegEffect(BaseModel):
     reg_name: str
     law_name: Optional[str] = None
@@ -117,12 +124,14 @@ class GaneomteoState(TypedDict):
     _delegated: NotRequired[bool]
     doc_index_hit: NotRequired[bool]   # 조례 RAG 인덱스 HIT 여부(가늠터 UI 트레이스 노출)
     verdict: NotRequired[str]
+    _llm_verdict: NotRequired[str]                     # record_verdict가 LLM 합성으로 커밋한 최종판정(build_reasoning이 _derive_verdict 대신 사용; 없으면 fallback)
     # ── 산출 (누적=operator.add)
     uijae: Annotated[list, operator.add]
     documents: Annotated[list, operator.add]
     cond_assessments: Annotated[list, operator.add]   # 조건부('해당시만') 서류 케이스 판정 — 에이전트가 상태/사용자질의로 결정({stage_key,ho,applies,reason})
     reg_effects: Annotated[list, operator.add]
     jorye_verdicts: Annotated[list, operator.add]
+    verdict_labels: Annotated[list, operator.add]     # record_verdict 다차원 판정 축(축 이름·개수는 LLM이 케이스마다 정함 — 코드 고정목록 없음)
     author: NotRequired[dict]
     term_notes: NotRequired[dict]            # 진단맥락 용어설명(에이전트가 state 사실로 생성) — 프론트 popover(when_note 패턴)
     scale_limits: NotRequired[dict]          # compute_scale 전용(에너지/구조안전 — 실 연면적 기준)

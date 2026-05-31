@@ -169,7 +169,7 @@ def build_reasoning(state):
         steps.append(add("부담금", f"{lv.get('levy_type')}: {lv.get('formula','')}".strip(),
                          "law" if lv.get("status") == "산출" else None,
                          (f"≈{lv.get('amount'):,}원" if lv.get("amount") is not None else lv.get("note", ""))))
-    verdict = _derive_verdict(state)
+    verdict = state.get("_llm_verdict") or _derive_verdict(state)   # LLM이 record_verdict로 합성한 최종판정 우선(없으면 코드 fallback). 아래 안전게이트(key_uncertain·강한규제·맹지)는 그대로 적용 → LLM도 over-promise 못 함(downgrade만).
     key_uncertain = any(s["status"] == "확인필요" and s["kind"] in ("행위제한", "조례호목해소") for s in steps)
     if key_uncertain and verdict in ("가능", "가능(조건부)", "조건부"):   # H5: 핵심단계 근거없으면 강등
         verdict = "확인필요"
@@ -228,6 +228,7 @@ def compose(state):
         return out
     card = {
         "verdict": state.get("verdict"),
+        "verdict_labels": state.get("verdict_labels", []),   # 다차원 판정 축(LLM이 케이스마다 정함) — 종합 verdict 옆에 투명 표시
         "legal_reasoning": state.get("legal_reasoning"),
         "uijae": state.get("uijae"),
         "documents": [{"stage": d["stage_key"], "count": d.get("count", 0), "status": d["status"],
