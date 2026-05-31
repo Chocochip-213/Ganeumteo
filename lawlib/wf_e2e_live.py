@@ -76,6 +76,33 @@ def building_register(pnu):
             "지하층수":it.get("ugrndFlrCnt"),"높이":it.get("heit"),"구조":it.get("strctCdNm"),
             "사용승인일":it.get("useAprDay"),"기타용도":it.get("etcPurps")}
 
+def building_floors(pnu):
+    """건축물대장 층별개요(건축HUB getBrFlrOulnInfo) — 층별 '현재 용도'(용도변경 출발점). PNU 분해는 building_register와 동일.
+    ※ urllib 빈 응답 → requests. totalCount 기준 페이징(행수 상수 없음). 반환: 층있음=True+층목록 / False(층정보없음) / None(실패).
+    각 행은 원문 그대로(층구분·층·주용도·기타용도·면적) — 용도→시설군·변경방향 해석은 코드가 안 함(LLM 몫)."""
+    s=str(pnu or "")
+    if len(s)<19: return {"층별있음":None,"사유":"PNU 없음"}
+    plat=1 if s[10]=="2" else 0
+    base={"serviceKey":DK,"sigunguCd":s[:5],"bjdongCd":s[5:10],"platGbCd":plat,"bun":s[11:15],"ji":s[15:19],"numOfRows":100,"_type":"json"}
+    rows=[]; page=1
+    try:
+        while True:
+            r=requests.get("http://apis.data.go.kr/1613000/BldRgstHubService/getBrFlrOulnInfo",
+                           params={**base,"pageNo":page},timeout=30)
+            body=r.json()["response"]["body"]
+            tc=int(body.get("totalCount") or 0)
+            its=(body.get("items") or {}).get("item") if isinstance(body.get("items"),dict) else []
+            if isinstance(its,dict): its=[its]
+            rows.extend(its)
+            if len(rows)>=tc or not its or page>=20: break   # totalCount 도달이 정상종료, page 상한은 폭주 안전망
+            page+=1
+    except Exception as e:
+        return {"층별있음":None,"사유":f"층별개요 조회 실패({type(e).__name__})"}
+    if not rows: return {"층별있음":False,"사유":"층별 정보 없음"}
+    floors=[{"층구분":it.get("flrGbCdNm"),"층":it.get("flrNoNm"),"층번호":it.get("flrNo"),
+             "주용도":it.get("mainPurpsCdNm"),"기타용도":it.get("etcPurps"),"면적":it.get("area")} for it in rows]
+    return {"층별있음":True,"행수":len(floors),"동수":len({it.get("dongNm") for it in rows}),"층목록":floors}
+
 def _S(v):
     if v is None:return ''
     if isinstance(v,list):return ' '.join(_S(x) for x in v)

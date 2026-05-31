@@ -666,7 +666,33 @@ def get_building_register(pnu: str, tool_call_id: Annotated[str, InjectedToolCal
                            "messages": [_tm(msg, tool_call_id)]})
 
 
-TOOLS = [geocode, get_parcel, get_building_register, get_land_use, get_land_price, act_landuse,
+@tool
+def get_building_floors(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+    """기존 건물의 '층별 현재 용도'를 건축물대장 층별개요로 조회 → 용도변경 출발점 확정. get_building_register가 '건물있음'이고 용도변경 쪽일 때 호출(빈땅 신축이면 불필요).
+    표제부 주용도(건물 1개)로 갈음 말고, 바꾸려는 층의 현용도를 이걸로 사실확인한 뒤 현용도→목표용도로 건축법§19 변경방향·act_landuse use_type을 정하라."""
+    r = W.building_floors(pnu)
+    f = r.get("층별있음")
+    if f is True:
+        lines = []
+        for fl in r.get("층목록", []):
+            seg = f"{fl.get('층구분') or ''}{fl.get('층') or ''} {fl.get('주용도') or ''}".strip()
+            if fl.get("기타용도"): seg += f"({fl.get('기타용도')})"
+            if fl.get("면적"): seg += f" {fl.get('면적')}㎡"
+            lines.append(seg)
+        body = " / ".join([x for x in lines if x])
+        msg = f"층별 현재 용도({r.get('행수')}행·{r.get('동수')}동): {body}"
+        fact = f"층별 현황: {body}"
+    elif f is False:
+        msg = f"층별 정보 없음 — {r.get('사유','')}"
+        fact = "층별 정보 없음"
+    else:
+        msg = f"층별개요 조회 불가 — {r.get('사유','')}. 표제부 주용도로 갈음하되 '층별 미확인' 명시."
+        fact = "층별 현황 미확인"
+    return Command(update={"document_facts": {"층별현황": fact}, "_toolcalls": ["get_building_floors"],
+                           "messages": [_tm(msg, tool_call_id)]})
+
+
+TOOLS = [geocode, get_parcel, get_building_register, get_building_floors, get_land_use, get_land_price, act_landuse,
          ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
          compute_envelope, parking_quota, levy_estimate,
          author_rule_tool, reg_effect_resolve_tool, record_uijae, record_ordinance_ruling, record_verdict,
