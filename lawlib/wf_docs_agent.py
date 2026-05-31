@@ -119,8 +119,9 @@ def docs_for(stage, law_name=None, article=None, hang_override=None):
             서류 = []
             for ho in target_ho:
                 if not isinstance(ho, dict): continue
-                num = _S(ho.get('호번호'))
                 txt = ' '.join(_S(ho.get('호내용')).split())
+                _hm = re.match(r'^(\d+(?:의\d+)?)\s*\.', txt)   # 호내용 앞 라벨 = 권위(API 호번호가 '1의2'를 '1.'로 collapse → 안정 식별자 복원, 검수 #4)
+                num = (_hm.group(1) + ".") if _hm else _S(ho.get('호번호'))
                 # 서류명 = 호 첫 문장(다만 단서 전까지)
                 head = txt.split('. 다만')[0].split('다만,')[0].strip()
                 if re.match(r'^[\d의.\s]*삭제', head): continue   # 폐지된 호 제외(호내용 '4. 삭제 <…>'처럼 호번호 접두 붙는 경우 포함)
