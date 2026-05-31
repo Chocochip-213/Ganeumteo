@@ -121,14 +121,13 @@ def _agent_invoke(llm, msgs):
 
 
 # 컨텍스트 편집 = LangChain 내장 ClearToolUsesEdit(Anthropic clear_tool_uses_20250919 미러).
-# 근본원인: 진단이 길어져 별표·조례 원문이 쌓이면 LLM 요청 body가 GMS 프록시 한도(~40KB)를 넘어
-# '[GMS] Model not found' 400으로 죽음 → 토큰 trigger 초과 시 오래된 도구결과를 '[cleared]'로 비움(최근 keep개=현재 추론 보존).
-# 손수 truncate 대신 공식 구현 채택(토큰기반·idempotent). trigger 낮춤(기본 100k는 GMS 한도엔 무의미). state엔 full 유지·LLM 요청에만 적용.
-_CTX_EDIT = ClearToolUsesEdit(trigger=6000, keep=3, clear_at_least=0)
-
+# 토큰 trigger 초과 시 오래된 도구결과를 '[cleared]'로 비움(최근 keep개=현재 추론 보존). state엔 full 유지·LLM 요청에만 적용.
+# trigger = 엔드포인트 컨텍스트 한도용 안전망(.env CTX_TRIGGER). gpt-5.5 등 1M 컨텍스트면 기본 90만
+# (1M 직전 헤드룸 — 한계 닿기 전에 오래된 도구결과 compact). GMS 같은 ~40KB body 프록시 쓸 때만 CTX_TRIGGER=6000으로 낮춘다.
 def _fit_context(msgs):
     out = list(msgs)
-    _CTX_EDIT.apply(out, count_tokens=count_tokens_approximately)
+    ClearToolUsesEdit(trigger=int(os.environ.get("CTX_TRIGGER", "900000")), keep=3, clear_at_least=0) \
+        .apply(out, count_tokens=count_tokens_approximately)
     return out
 
 
@@ -139,6 +138,15 @@ def make_agent_node():
         def agent_node(state):
             return {"messages": [stub_plan(state)]}
         return agent_node, "stub-planner(강제)"
+    base_url = os.environ.get("LLM_BASE_URL")
+    if base_url:   # 커스텀 OpenAI-호환 엔드포인트(.env LLM_BASE_URL/LLM_MODEL) — GMS 40KB 한도 우회, 최우선
+        from langchain_openai import ChatOpenAI
+        model = os.environ.get("LLM_MODEL", "gpt-5.5")
+        llm = ChatOpenAI(model=model, base_url=base_url, api_key=os.environ.get("LLM_API_KEY") or "x",
+                         timeout=120, max_retries=2).bind_tools(TOOLS)
+        def agent_node(state):
+            return _agent_invoke(llm, [("system", AGENT_SYSTEM)] + _fit_context(state["messages"]))
+        return agent_node, f"LLM({model}@custom)"
     gms = os.environ.get("GMS_KEY")
     if gms:   # SSAFY GMS proxy (OpenAI 호환) — gpt-5.2 (토큰 절약: pro 아님)
         from langchain_openai import ChatOpenAI
