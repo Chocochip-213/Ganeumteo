@@ -1069,8 +1069,16 @@ function docStageCard(d, num, isUijae) {
     else { groups.push({ head: it, moks: [] }); }
   });
 
-  const formLink = (it) => (it.form_hwp || it.form_pdf)   // 양식 다운로드: HWP·PDF 둘 다(고르게)
-    ? `<span class="ds-form" title="${esc(it.form_title || "")}">${I.down}<em>양식</em>${it.form_hwp ? `<a href="${esc(it.form_hwp)}" target="_blank" rel="noreferrer">HWP</a>` : ""}${it.form_pdf ? `<a href="${esc(it.form_pdf)}" target="_blank" rel="noreferrer">PDF</a>` : ""}</span>` : "";
+  // 서류별: 별지 서식 있으면 양식 다운로드(HWP/PDF), 없으면 '직접 준비' 배지. 둘 다 hover로 준비법 설명.
+  const prepHint = (it) => {
+    const proviso = it.has_proviso ? " (단서·예외 조건 있음 — 원문 확인)" : "";
+    if (it.form_hwp || it.form_pdf) {
+      const tip = `정해진 서식이 있어요. 양식(HWP/PDF)을 받아 작성해 제출하세요.${proviso}`;
+      return `<span class="ds-form" title="${esc(tip)}">${I.down}<em>양식</em>${it.form_hwp ? `<a href="${esc(it.form_hwp)}" target="_blank" rel="noreferrer">HWP</a>` : ""}${it.form_pdf ? `<a href="${esc(it.form_pdf)}" target="_blank" rel="noreferrer">PDF</a>` : ""}</span>`;
+    }
+    const tip = `정해진 양식은 없어요. ${law}${article ? " " + article : ""}에 적힌 내용대로 직접 준비해 제출하면 돼요.${proviso}`;
+    return `<span class="ds-self" title="${esc(tip)}">✍️ 직접 준비</span>`;
+  };
   const groupHtml = (g) => {
     const h = g.head || {};
     const name = String(h.doc_name || "").trim();
@@ -1081,9 +1089,9 @@ function docStageCard(d, num, isUijae) {
       : `<span class="ds-ap ds-ap-u">확인필요</span>`;
     const areason = (h.conditional && h.assess_reason) ? `<div class="ds-areason">${esc(String(h.assess_reason))}</div>` : "";
     const mokHtml = g.moks.map((m) => {
-      return `<div class="ds-mok"><span class="mbar"></span><span class="dtxt">${esc(String(m.doc_name || "").trim())}</span>${formLink(m, "양식")}</div>`;
+      return `<div class="ds-mok"><span class="mbar"></span><span class="dtxt">${esc(String(m.doc_name || "").trim())}</span>${prepHint(m)}</div>`;
     }).join("");
-    return `<div class="ds-doc${ap === "no" ? " ds-doc-off" : ""}"><span class="dchk">${I.check}</span><span class="dtxt">${esc(name) || "(서류명 없음)"}${apBadge}${areason}</span>${formLink(h, "양식 받기")}</div>${mokHtml}`;
+    return `<div class="ds-doc${ap === "no" ? " ds-doc-off" : ""}"><span class="dchk">${I.check}</span><span class="dtxt">${esc(name) || "(서류명 없음)"}${apBadge}${areason}</span>${prepHint(h)}</div>${mokHtml}`;
   };
 
   // 에이전트 판정 반영: 제출(필수 + 해당yes) / 확인필요(unknown) / 해당없음(no=제출 불요)
