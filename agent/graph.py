@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """ReAct 그래프 — 명세 부록 G1. agent ⇄ tools 루프 + 완결성 가드 + build_reasoning + compose + finalize/abstain."""
+import os
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
 from langgraph.types import Command
@@ -100,6 +101,12 @@ def completeness_guard(state):
         assessed = {(a.get("stage_key"), _norm_ho(a.get("ho"))) for a in state.get("cond_assessments", [])}
         if cond_keys - assessed:
             miss.append(f"조건부판정:{len(cond_keys - assessed)}건")
+        else:
+            # unknown 조건부(권원·공동소유·사전결정·분할납부 등 사용자만 아는 사실)인데 사용자에게 한 번도 안 물었으면 → 묻으라고 바운스(검수 #1: unknown이 완료로 통과하던 것). 이미 물은 뒤의 unknown·stub은 수용(과바운스 방지).
+            _unk = {(a.get("stage_key"), _norm_ho(a.get("ho"))) for a in state.get("cond_assessments", []) if str(a.get("applies")) == "unknown"} & cond_keys
+            _is_stub = os.environ.get("FORCE_STUB") or os.environ.get("APP_MODE") == "stub"
+            if _unk and "request_human_input" not in called and not _is_stub:
+                miss.append(f"조건부 사용자확인:{len(_unk)}건")
     if miss and (state.get("_steps", 0) - state.get("_turn_base_steps", 0)) < _GUARD_BOUNCE_CAP and not stalled:
         # 제어신호는 사용자 발화로 위장하지 않는다 — <system-reminder>로 명시(Claude Code 패턴). 모델은 이를 자동점검 지시로 읽음.
         return {"_incomplete": True, "messages": [HumanMessage(f"<system-reminder>완결성 자동점검(사용자 발화 아님): 아직 미확인 {miss}. 해당 도구로만 마저 조회하고, 끝나면 도구 없이 '완료'라 답하라.</system-reminder>")]}
