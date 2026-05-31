@@ -895,7 +895,20 @@ function verdictCard(env, card, cits, full) {
   arr(sl.notes).forEach((n) => risks.push(["규모 기준", esc(n), "low"]));
   if (sl.energy_saving_required) risks.push([maybeTerm("에너지절약계획서") + " 대상", "연면적 기준을 넘어 에너지절약계획서 제출이 필요해요.", "mid"]);
   if (sl.structural_safety_required) risks.push([maybeTerm("구조안전확인서") + " 대상", "연면적·층수 기준에 따라 구조안전 확인이 필요해요.", "mid"]);
-  arr(env.abstentions).concat(arr(card.abstentions)).forEach((a) => risks.push([(a.node ? `[${esc(a.node)}] ` : "") + "자동판정 보류", esc(a["사유"] || ""), "mid"]));
+  // abstentions: env·card는 동일 리스트라 한 쪽만 렌더(중복 방지) + Set dedup. 내부 제어신호(completeness_guard 스텝캡)는
+  //   [node] jargon 없이 평이한 한 줄로 접는다(미판정 항목은 위 '확인 필요'·서류 applies로 이미 노출됨).
+  const _seenAb = new Set();
+  arr(env.abstentions).forEach((a) => {
+    const isGuard = a.node === "completeness_guard";
+    const txt = isGuard ? "일부 항목 추가 확인 필요" : "자동판정 보류";
+    const desc = isGuard
+      ? "자동 판정을 다 마치지 못한 항목이 있어요. 위 ‘확인 필요’ 항목과 제출서류의 해당 여부를 직접 점검하세요."
+      : esc(a["사유"] || "");
+    const key = txt + "|" + desc;
+    if (_seenAb.has(key)) return;
+    _seenAb.add(key);
+    risks.push([txt, desc, "mid"]);
+  });
   const riskHtml = risks.map((r) => `<div class="risk-row ${r[2]}"><div class="rc">${I.bang}</div><div><div class="rt">${r[0]}</div><div class="rd">${r[1]}</div></div></div>`).join("");
 
   // next-list: 합성(서류 준비 + 관할 문의 + author)
