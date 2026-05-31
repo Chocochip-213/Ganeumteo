@@ -134,9 +134,9 @@ def docs_for(stage, law_name=None, article=None, hang_override=None):
                             서류.append({"호": num + _S(mok.get("목번호")), "서류": mtxt[:80],
                                         "단서있음": '다만' in mtxt, "조건부": ho_cond or _is_cond(mtxt),
                                         "서식": _ref_form(mtxt, forms)})
-            return {"단계": stage, "법령": lawnm, "조": f"제{jo}조{hang or ''}",
+            return {"단계": stage, "법령": lawnm, "조": f"제{jo_num}조" + (f"의{jo_ga}" if jo_ga else "") + (hang or ''),
                     "상태": "전수확보", "건수": len(서류), "신청서": 신청서, "서류": 서류, **_when(stage)}
-    return {"단계": stage, "상태": "확인필요", "사유": f"제{jo}조 조문 못찾음"}
+    return {"단계": stage, "상태": "확인필요", "사유": f"제{jo_num}조{('의' + jo_ga) if jo_ga else ''} 조문 못찾음"}
 
 if __name__ == "__main__":
     import sys

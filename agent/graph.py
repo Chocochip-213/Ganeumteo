@@ -35,6 +35,17 @@ _STEP_HARDCAP = 24      # agent 방문 하드캡(무한루프 방지)
 _GUARD_BOUNCE_CAP = 19  # 이 이상이면 guard 바운스 중단(진행)
 
 
+def _norm_ho(ho):
+    """조건부 서류 호 매칭키 정규화 — 표기차('1'·'1.'·'제1호'·'1호')만 흡수.
+    앞 '제'·뒤 '호'·양끝 마침표/공백만 정리(글로벌 치환 금지 → 식별자 안 깨지고 목 '1.가.'도 '1'과 안 섞임)."""
+    s = str(ho or "").strip().rstrip(".").strip()
+    if s.startswith("제"):
+        s = s[1:].strip()
+    if s.endswith("호"):
+        s = s[:-1].strip()
+    return s.strip()
+
+
 def route_after_agent(state):
     base_s = state.get("_turn_base_steps", 0)            # 후속턴: 이번 invoke 기준(thread 누적 아님)
     base_t = state.get("_turn_base_tools", 0)
@@ -82,10 +93,10 @@ def completeness_guard(state):
             miss.append("서류전수:" + ",".join(sorted(need - doc_stages)))
         # 조건부('해당시만') 서류 미판정 검사 — 에이전트가 케이스로 판정(필요시 사용자 질의)해야 종료(최상위 호만, 목 제외)
         _mok = "가나다라마바사아자차카타파하"
-        cond_keys = {(d.get("stage_key"), it.get("ho")) for d in state.get("documents", [])
+        cond_keys = {(d.get("stage_key"), _norm_ho(it.get("ho"))) for d in state.get("documents", [])
                      for it in (d.get("items") or [])
                      if it.get("conditional") and not any(c in str(it.get("ho", "")) for c in _mok)}
-        assessed = {(a.get("stage_key"), a.get("ho")) for a in state.get("cond_assessments", [])}
+        assessed = {(a.get("stage_key"), _norm_ho(a.get("ho"))) for a in state.get("cond_assessments", [])}
         if cond_keys - assessed:
             miss.append(f"조건부판정:{len(cond_keys - assessed)}건")
     if miss and (state.get("_steps", 0) - state.get("_turn_base_steps", 0)) < _GUARD_BOUNCE_CAP and not stalled:
@@ -189,13 +200,13 @@ def build_reasoning(state):
 
 def compose(state):
     """진단 카드 조립(부록 D1.2). 사실 재생성 없이 State 값만. (실 LLM이면 서술 강화)."""
-    _ca = {(a.get("stage_key"), a.get("ho")): a for a in state.get("cond_assessments", [])}
+    _ca = {(a.get("stage_key"), _norm_ho(a.get("ho"))): a for a in state.get("cond_assessments", [])}
     def _doc_items(d):   # 조건부 서류 항목에 에이전트 판정(applies·assess_reason) 병합
         out = []
         for it in (d.get("items") or []):
             it2 = dict(it)
             if it.get("conditional"):
-                a = _ca.get((d.get("stage_key"), it.get("ho")))
+                a = _ca.get((d.get("stage_key"), _norm_ho(it.get("ho"))))
                 if a:
                     it2["applies"] = a.get("applies"); it2["assess_reason"] = a.get("reason")
             out.append(it2)
