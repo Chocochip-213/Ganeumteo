@@ -18,7 +18,7 @@ def _wrap_tool_call(request, execute):
     name = tc.get("name", "")
     if request.tool is None:                          # 미등록/오타 도구명
         return ToolMessage(f"<tool_use_error>알 수 없는 도구 '{name}' — 등록된 도구명으로 다시 호출하라</tool_use_error>",
-                           tool_call_id=tc["id"], name=name)
+                           tool_call_id=tc["id"], name=name, status="error")
     try:
         return execute(request)
     except GraphBubbleUp:                             # interrupt(HITL)·control-flow → 전파(삼키면 입력요청 깨짐)
@@ -26,7 +26,7 @@ def _wrap_tool_call(request, execute):
     except Exception as e:                            # 스키마 외 예외 → 크래시 대신 정직 환류
         em = f"{type(e).__name__}: {str(e) or repr(e)}"[:300]
         return Command(update={
-            "messages": [ToolMessage(f"<tool_use_error>{em}</tool_use_error>", tool_call_id=tc["id"], name=name)],
+            "messages": [ToolMessage(f"<tool_use_error>{em}</tool_use_error>", tool_call_id=tc["id"], name=name, status="error")],
             "abstentions": [{"node": name, "사유": f"도구 예외 {type(e).__name__}"}],
             "_toolcalls": [name]})   # 시도 기록 → 가드·stub 무한 재호출 방지(fail-closed abstain)
 
@@ -170,6 +170,17 @@ def build_reasoning(state):
         if not any(any(sr in (g or "") or (g or "") in sr for g in grounded) for sr in strong_regs):
             verdict = "확인필요"
             out["abstentions"] = [{"node": "build_reasoning", "사유": f"강한 행위제한 규제중첩 {strong_regs} — 행위제한 조문 미확보, 사람검토 필요"}]
+    # 선결조건(접도) fail-closed: 맹지(도로 미접)는 신축의 기본 선결(건축법§44 접도의무). 도로지정·사도개설(§45/사도법)로
+    #  해소 가능성이 record_uijae로 검토되지 않은 채 '가능'이면 신축 성립 자체가 불확실 → 확인필요 보류(거짓 가능 방지).
+    #  용도변경 등 비신축은 새 접도의무가 생기지 않으므로 제외(doc_stages로 신축 여부 판별 — work_type 가정 안 함).
+    if state.get("road_side") == "맹지" and verdict in ("가능", "가능(조건부)", "조건부"):
+        _ds = {d.get("stage_key") for d in state.get("documents", [])}
+        _is_sinchuk = ("건축허가" in _ds) or not (_ds & {"용도변경", "대수선"})
+        _road_resolved = bool({u.get("stage_key") for u in state.get("uijae", [])} & {"사도개설", "도로지정"})
+        if _is_sinchuk and not _road_resolved:
+            verdict = "확인필요"
+            out.setdefault("abstentions", []).append({"node": "build_reasoning",
+                "사유": "맹지(도로 미접) — 신축은 건축법§44 접도의무가 선결. 도로지정·사도개설(§45/사도법) 가능성 미검토 → 사람검토 필요"})
     out["legal_reasoning"] = {"steps": steps, "verdict": verdict,
             "verdict_basis_seq": [s["seq"] for s in steps if s["kind"] in ("행위제한", "조례호목해소")]}
     out["verdict"] = verdict
