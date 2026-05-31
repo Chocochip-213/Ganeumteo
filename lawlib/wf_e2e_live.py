@@ -6,6 +6,7 @@
 하드코딩=라우팅 시드만(지목→전용법, 용도지역→조례별표 제목매칭). 결과=파일 저장.
 사용: python wf_e2e_live.py "<주소>" <road|parcel> [면적] [용도]"""
 import urllib.request, urllib.parse, json, time, re, sys, io, zlib
+import requests   # 건축HUB(건축물대장)는 urllib로 빈 응답 — requests 필요(probe2 검증)
 import wf_docs_agent as DOC, wf_reg_agent as REG, wf_roadmap as RM
 import law_fetch as L
 try: import olefile
@@ -52,21 +53,26 @@ def act_detail(uc,nm,ac):
     return out
 
 def building_register(pnu):
-    """건축물대장 표제부(건축HUB getBrTitleInfo) — 필지에 '기존 건물'이 있나(=신축 vs 용도변경 자동판별). PNU에서 시군구/법정동/본번/부번 분해.
-    반환: 건물있음=True(주용도·연면적·층수·동수) / False(빈땅 가능) / None(조회불가 — 건축HUB 활용신청 필요). 빈 응답을 '빈땅 확정'으로 단정하지 않음."""
+    """건축물대장 표제부(건축HUB getBrTitleInfo) — 필지에 '기존 건물'이 있나(=신축 vs 용도변경 자동판별). PNU 분해.
+    ※ 건축HUB는 urllib get()으론 빈 응답 → requests로 호출(probe2 검증). _type=json·platGbCd 정수·bun/ji zero-pad.
+    반환: 건물있음=True(주용도·연면적·층수·동수) / False(빈땅 가능) / None(조회실패). totalCount로 판정."""
     s=str(pnu or "")
     if len(s)<19: return {"건물있음":None,"사유":"PNU 없음"}
-    plat="1" if s[10]=="2" else "0"   # PNU 필지구분 2=산→platGbCd 1, else 0(대지)
-    r=get("http://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo",
-          {"serviceKey":DK,"sigunguCd":s[:5],"bjdongCd":s[5:10],"platGbCd":plat,"bun":s[11:15],"ji":s[15:19],"numOfRows":50,"pageNo":1})
-    if not r:   # 200/0바이트 = 건축HUB 미활용신청 → 조회불가(빈땅 단정 금지)
-        return {"건물있음":None,"사유":"건축물대장 조회불가(건축HUB API 활용신청 필요 — data.go.kr/15134735)"}
-    code=(re.findall(r"<resultCode>(.*?)</resultCode>",r) or [""])[0]
-    items=re.findall(r"<item>(.*?)</item>",r,re.S)
-    if not items:
-        return {"건물있음":False,"사유":f"등록된 건축물 없음(빈땅 가능) code={code}"}
-    g=lambda k:(re.findall(rf"<{k}>(.*?)</{k}>",r) or [""])[0].strip()
-    return {"건물있음":True,"동수":len(items),"주용도":g("mainPurpsCdNm"),"연면적":g("totArea"),"지상층수":g("grndFlrCnt"),"건물명":g("bldNm")}
+    plat=1 if s[10]=="2" else 0   # PNU 필지구분 2=산→platGbCd 1, else 0(대지)
+    try:
+        r=requests.get("http://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo",
+                       params={"serviceKey":DK,"sigunguCd":s[:5],"bjdongCd":s[5:10],"platGbCd":plat,"bun":s[11:15],"ji":s[15:19],"numOfRows":50,"pageNo":1,"_type":"json"},timeout=30)
+        body=r.json()["response"]["body"]
+    except Exception as e:
+        return {"건물있음":None,"사유":f"건축물대장 조회 실패({type(e).__name__})"}
+    tc=int(body.get("totalCount") or 0)
+    its=(body.get("items") or {}).get("item") if isinstance(body.get("items"),dict) else []
+    if isinstance(its,dict): its=[its]
+    if tc==0 or not its:
+        return {"건물있음":False,"사유":"등록 건축물 없음(빈땅 가능)"}
+    it=its[0]
+    return {"건물있음":True,"동수":tc,"주용도":it.get("mainPurpsCdNm"),"연면적":it.get("totArea"),
+            "지상층수":it.get("grndFlrCnt"),"건물명":it.get("bldNm"),"건폐율":it.get("bcRat"),"용적률":it.get("vlRat")}
 
 def _S(v):
     if v is None:return ''
