@@ -569,8 +569,9 @@ function runDiagnoseStream(url, followup) {
     handleTraceEvent(c, ev, think);
   };
   es.onerror = () => {
-    if (c._es) { try { c._es.close(); } catch (_) {} c._es = null; }
-    // 결과가 이미 받아졌으면 표시, 아니면 안내(보고 있는 방일 때만 DOM 갱신 — 검수 EF-5)
+    if (!c._es) return;   // interrupt/done 핸들러가 이미 의도적으로 닫음(c._es=null) → 무시. 일시정지(HITL interrupt)를 결과실패로 오인해 fetchResult하던 버그 차단('결과를 불러오지 못했어요')
+    try { c._es.close(); } catch (_) {} c._es = null;
+    // 진짜 연결 끊김만 여기 도달 — 결과 있으면 표시, 아니면 안내(보고 있는 방일 때만 — 검수 EF-5)
     if (c.threadId) fetchResult(c, think, followup);
     else { c._streaming = false; if (c === S.active) { think.remove(); aiSay("진단 연결이 끊어졌어요. 잠시 후 ‘주소 변경’으로 다시 시도하거나 입력을 확인해 주세요.", 400); } }
   };
@@ -606,7 +607,7 @@ function resumeStream(url, think) {
     if (k === "done") { try { es.close(); } catch (_) {} c._es = null; pushTrace(c, ev); return fetchResult(c, think); }
     handleTraceEvent(c, ev, think);
   };
-  es.onerror = () => { if (c._es) { try { c._es.close(); } catch (_) {} c._es = null; } if (c.threadId) fetchResult(c, think); else c._streaming = false; };
+  es.onerror = () => { if (!c._es) return; try { c._es.close(); } catch (_) {} c._es = null; if (c.threadId) fetchResult(c, think); else c._streaming = false; };
 }
 
 // ============================================================
@@ -1160,11 +1161,12 @@ async function freeReply(text) {
   const c = S.active;
   // HITL 대기 중이면 — 자유텍스트 답을 resume로(에이전트 LLM이 면적·층수 등 해석). 중단어면 reject.
   if (c._hitl) {                                  // submit이 이미 pushUser함 → 여기선 중복 push 안 함
-    const tid = c._hitl.thread_id, think = c._hitl.think; c._hitl = null;
+    const tid = c._hitl.thread_id, oldThink = c._hitl.think; c._hitl = null;
+    if (oldThink && oldThink.done) oldThink.done(c);   // 직전 검토버블은 '검토 완료' 칩으로 접고, 새 검토버블이 사용자 답 '아래'에 뜨게(사고보기 위로 안 감 — 사용자 요구)
     const stop = /^\s*(중단|취소|그만|중지|stop)\s*$/i.test(text);
     const qs = new URLSearchParams({ thread_id: tid });
     if (stop) qs.set("reject", "true"); else qs.set("answer", text);
-    resumeStream("/diagnose/resume?" + qs.toString(), think);
+    resumeStream("/diagnose/resume?" + qs.toString());   // think 안 넘김 → makeThinking이 하단(사용자 답 아래)에 새 버블 + scrollBottom
     return;
   }
   // 재진단 명령(이미 용도 있을 때) → 같은 용도로 다시
@@ -1186,7 +1188,7 @@ async function rediagnose() {
   closePanel();
   await aiSay(`<b>${esc(c.loc.address)}</b> 기준으로 다시 진단할게요.`, 400);
   setStage(2);
-  const params = { address: c.loc.address, use_type: c.use_type || "근린생활시설" };
+  const params = { address: c.loc.address, use_type: c.use_type };   // 위 1186서 use_type 보장 — 디폴트 날조 안 함(무하드코딩)
   // 면적·층수 강제 안 함 — 이전 진단서 확정됐으면 재사용, 없으면 에이전트가 다시 물음
   if (c.floor_area != null) params.floor_area = String(c.floor_area);
   if (c.floor_count != null) params.floor_count = String(c.floor_count);
