@@ -448,12 +448,10 @@ def compute_envelope(land_area_m2: float, bcr_pct: float, far_pct: float,
     max_bldg = round(land_area_m2 * bcr_pct / 100.0, 1)
     max_floor = round(land_area_m2 * far_pct / 100.0, 1)
     approx = round(max_floor / max_bldg, 1) if max_bldg else None
-    sl = ScaleLimit(energy_saving_required=max_floor >= 500,
-                    structural_safety_required=(max_floor >= 200 or (approx or 0) >= 2),
-                    notes=[f"대지 {land_area_m2}㎡ 건폐율 {bcr_pct}% 용적률 {far_pct}%"],
-                    max_building_area=max_bldg, max_floor_area=max_floor, approx_floors=approx,
-                    envelope_note="상한·가늠치(설계 後 확정). 율은 LLM이 시행령§84/§85·조례서 읽어 전달").model_dump()
-    return Command(update={"scale_limits": sl, "_toolcalls": ["compute_envelope"],
+    env = {"max_building_area": max_bldg, "max_floor_area": max_floor, "approx_floors": approx,
+           "envelope_note": "상한·가늠치(설계 後 확정). 율은 LLM이 시행령§84/§85·조례서 읽어 전달",
+           "notes": [f"대지 {land_area_m2}㎡ 건폐율 {bcr_pct}% 용적률 {far_pct}%"]}
+    return Command(update={"envelope": env, "_toolcalls": ["compute_envelope"],   # scale_limits와 분리 키 — 병렬 동시쓰기 충돌(InvalidUpdateError) 방지
                            "messages": [_tm(f"envelope: 최대건축면적={max_bldg}㎡ 최대연면적={max_floor}㎡ 약식층수≈{approx} (건폐율{bcr_pct}%·용적률{far_pct}%)", tool_call_id)]})
 
 

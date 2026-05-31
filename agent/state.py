@@ -125,7 +125,8 @@ class GaneomteoState(TypedDict):
     jorye_verdicts: Annotated[list, operator.add]
     author: NotRequired[dict]
     term_notes: NotRequired[dict]            # 진단맥락 용어설명(에이전트가 state 사실로 생성) — 프론트 popover(when_note 패턴)
-    scale_limits: NotRequired[dict]          # compute_scale·compute_envelope 공용(overwrite — envelope가 ScaleLimit 확장)
+    scale_limits: NotRequired[dict]          # compute_scale 전용(에너지/구조안전 — 실 연면적 기준)
+    envelope: NotRequired[dict]              # compute_envelope 전용(건폐율·용적률 최대치) — scale_limits와 분리(병렬 동시쓰기 충돌 방지)
     parking_req: NotRequired[dict]           # parking_quota 산출(부설주차 N대) — scale_limits와 분리(덮어쓰기 충돌 방지)
     levies: Annotated[list, operator.add]    # 부담금(농지보전·대체산림·개발) — levy_estimate가 누적
     citations: Annotated[list, operator.add]

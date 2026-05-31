@@ -153,9 +153,10 @@ def build_reasoning(state):
     sl = state.get("scale_limits")
     if sl:
         steps.append(add("규모임계", "연면적/층수 임계", "law"))
-        if sl.get("max_building_area") is not None:   # 건폐율·용적률 envelope(가늠치 — verdict 무관)
-            steps.append(add("규모가늠", f"최대건축면적 {sl.get('max_building_area')}㎡·최대연면적 {sl.get('max_floor_area')}㎡·약식층수 {sl.get('approx_floors')}",
-                             "law", sl.get("envelope_note", "")))
+    env = state.get("envelope")   # 건폐율·용적률 envelope(가늠치 — verdict 무관) — compute_scale와 분리 키
+    if env and env.get("max_building_area") is not None:
+        steps.append(add("규모가늠", f"최대건축면적 {env.get('max_building_area')}㎡·최대연면적 {env.get('max_floor_area')}㎡·약식층수 {env.get('approx_floors')}",
+                         "law", env.get("envelope_note", "")))
     pr = state.get("parking_req")
     if pr and pr.get("status") == "산출":   # 부설주차 N대(가늠치 — verdict 무관)
         steps.append(add("부설주차", f"{pr.get('use_type')} {pr.get('floor_area')}㎡ → {pr.get('spaces')}대",
@@ -198,6 +199,18 @@ def build_reasoning(state):
     return out
 
 
+def _merge_scale_card(state):
+    """카드 표시용: compute_scale(에너지/구조)·compute_envelope(max_*, 분리키) 저장분 병합(notes 합침)."""
+    sl, env = state.get("scale_limits") or {}, state.get("envelope") or {}
+    if not sl and not env:
+        return None
+    out = {**sl, **env}
+    notes = list(sl.get("notes") or []) + [n for n in (env.get("notes") or []) if n not in (sl.get("notes") or [])]
+    if notes:
+        out["notes"] = notes
+    return out
+
+
 def compose(state):
     """진단 카드 조립(부록 D1.2). 사실 재생성 없이 State 값만. (실 LLM이면 서술 강화)."""
     _ca = {(a.get("stage_key"), _norm_ho(a.get("ho"))): a for a in state.get("cond_assessments", [])}
@@ -223,7 +236,7 @@ def compose(state):
                        "apply_title": d.get("apply_title", ""), "apply_hwp": d.get("apply_hwp", ""),
                        "apply_pdf": d.get("apply_pdf", ""), "items": _doc_items(d)}
                       for d in state.get("documents", [])],
-        "scale_limits": state.get("scale_limits"),   # compute_scale·compute_envelope 공용(envelope 3필드 포함)
+        "scale_limits": _merge_scale_card(state),   # compute_scale + envelope(분리키) 표시 병합
         "parking_req": state.get("parking_req"),       # 부설주차 N대(parking_quota)
         "levies": state.get("levies", []),             # 부담금(농지보전·대체산림·개발) — 금액 없으면 status=확인필요
         "author": state.get("author"),
