@@ -5,14 +5,16 @@
 서류=wf_docs_agent 조문전수 / 규제효과=wf_reg_agent 법령조회 / 작성주체=건축법§23 라이브.
 하드코딩=라우팅 시드만(지목→전용법, 용도지역→조례별표 제목매칭). 결과=파일 저장.
 사용: python wf_e2e_live.py "<주소>" <road|parcel> [면적] [용도]"""
-import urllib.request, urllib.parse, json, time, re, sys, io, zlib
+import urllib.request, urllib.parse, json, time, re, sys, io, zlib, os
 import requests   # 건축HUB(건축물대장)는 urllib로 빈 응답 — requests 필요(probe2 검증)
+from dotenv import load_dotenv
+load_dotenv()
 import wf_docs_agent as DOC, wf_reg_agent as REG, wf_roadmap as RM
 import law_fetch as L
 try: import olefile
 except: olefile=None
 
-VW="1E6285EC-6D3A-367C-AE65-CBD3510DEE9C"; DK="a76ca13a01f4a886710c3ff53bb0e6746d8fff0bb27c5e6b8f4c87292a6bad4e"; DOM="http://localhost"
+VW=os.environ.get("VWORLD_KEY",""); DK=os.environ.get("DATAGO_KEY",""); DOM=os.environ.get("VWORLD_DOMAIN","http://localhost")   # 키는 .env(gitignored), 코드 노출 금지
 def get(url,p,tries=5,euckr=False):
     qs=urllib.parse.urlencode(p,safe=':()')
     for i in range(tries):

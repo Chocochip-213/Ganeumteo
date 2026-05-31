@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """law.go.kr DRF fetch helper. cp949 decode + retry/backoff. WinError 10054 prone."""
-import urllib.request, urllib.parse, json, time, sys
+import urllib.request, urllib.parse, json, time, sys, os
+from dotenv import load_dotenv
+load_dotenv()
 
-OC = "openlawSSAFYkey"
+OC = os.environ.get("LAW_OC", "")   # law.go.kr OC — .env(gitignored), 코드 노출 금지
 BASE = "http://www.law.go.kr/DRF"
 
 import io as _io, zlib as _zlib
