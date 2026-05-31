@@ -93,19 +93,22 @@ function mdLite(s) {
   h = h.replace(/\n/g, "<br>");
   return h;
 }
-// 임베디드 하이라이트용 키(4자+, 긴 것 먼저) — 문장 속 용어 자동 표시(첫 등장만)
-const _TERMKEYS = Object.keys(GLOSSARY).filter((k) => k.length >= 4).sort((a, b) => b.length - a.length);
+// 임베디드 하이라이트용 키(2자+, 긴 것 먼저) — 문장 속 용어 자동 표시(첫 등장만)
+const _TERMKEYS = Object.keys(GLOSSARY).filter((k) => k.length >= 2).sort((a, b) => b.length - a.length);
+function termHtml(key, label) {
+  return `<span class="term" data-term="${esc(key)}">${esc(label || key)}<span class="term-q">?</span></span>`;
+}
 function linkifyTerms(plain) {   // 평문 → 용어 span(esc 후 첫 등장 래핑). HTML 입력 금지(평문만).
   let html = esc(String(plain == null ? "" : plain));
   for (const k of _TERMKEYS) {
     const ek = esc(k), idx = html.indexOf(ek);
     if (idx < 0) continue;
     if (html.lastIndexOf("<span", idx) > html.lastIndexOf("</span>", idx)) continue;   // 이미 span 안이면 skip
-    html = html.slice(0, idx) + `<span class="term" data-term="${ek}">${ek}</span>` + html.slice(idx + ek.length);
+    html = html.slice(0, idx) + termHtml(k, k) + html.slice(idx + ek.length);
   }
   return html;
 }
-function T(key, label) { const g = GLOSSARY[key]; return `<span class="term" data-term="${esc(key)}">${esc(label || (g ? g[0] : key))}</span>`; }
+function T(key, label) { const g = GLOSSARY[key]; return termHtml(key, label || (g ? g[0] : key)); }
 // GLOSSARY에 있는 토큰이면 용어 span, 아니면 esc
 function maybeTerm(text) { return GLOSSARY[text] ? T(text) : esc(text); }
 
@@ -586,11 +589,22 @@ function showInterrupt(detail, think, c) {
   if (think) think.step("답변을 기다리는 중…");
   // 폼 대신 대화형 — 에이전트 질문을 채팅 버블로, 사용자가 채팅에 자유롭게 답하면 resume(LLM이 해석)
   const q = String(detail.question || "조금 더 알려주실 수 있을까요?");
-  const html = esc(q).replace(/\n/g, "<br>")
+  const html = formatQuestion(q)
     + `<div class="hitl-hint">${I.info} 아래 채팅창에 편하게 답해 주세요. 그만하려면 “중단”이라고 입력하면 돼요.</div>`;
   c.msgs.push({ role: "ai", html });
   if (c === S.active) { appendRaw({ role: "ai", html }); scrollBottom(); wireTerms(); }   // 보고 있는 방일 때만 DOM
   c._hitl = { thread_id: c.threadId, think };   // 다음 채팅 입력을 resume로 라우팅(freeReply가 봄)
+}
+
+function formatQuestion(q) {
+  const s = String(q || "").replace(/\r/g, "").trim();
+  const parts = [...s.matchAll(/(?:^|\s)([①②③④⑤⑥⑦⑧⑨⑩])\s*([\s\S]*?)(?=\s[①②③④⑤⑥⑦⑧⑨⑩]\s*|$)/g)];
+  if (parts.length >= 2) {
+    return `<div class="hitl-q-intro">서류 해당 여부를 확정하려고 몇 가지만 알려주세요.</div><ol class="hitl-list">`
+      + parts.map((m) => `<li>${linkifyTerms(m[2].trim())}</li>`).join("")
+      + `</ol>`;
+  }
+  return `<div class="hitl-q">${linkifyTerms(s).replace(/\n/g, "<br>")}</div>`;
 }
 
 // resume도 같은 검토버블에 이어붙임(trace 누적 + 1줄 갱신).
@@ -686,6 +700,7 @@ function answerMessage(c) {
   const cits = arr(c.result && c.result.citations);
   const detail =
     verdictCard(env, card, cits, c.result) +
+    documentFactsCard(card) +
     envelopeCard(card) + leviesCard(card) + parkingCard(card) +
     `<div class="rp-sec-h">${I.list} 단계별 제출 서류</div>` + docCards(card);
   return `<div class="answer-msg ${level}" data-role="answer">
@@ -847,6 +862,20 @@ function leviesCard(card) {
     return `<div class="lv-row"><div class="lv-main"><div class="lv-t">${esc(l.levy_type || "부담금")}</div>${meta ? `<div class="lv-m">${meta}</div>` : ""}</div>${amt}</div>`;
   }).join("");
   return `<div class="card card-pad mini-card"><div class="card-h" style="padding:0 0 8px">${I.info} 예상 부담금</div>${rows}</div>`;
+}
+
+// ── 확인하신 정보(document_facts): HITL로 사용자가 답한 서류판단 사실(durable) ──
+function documentFactsCard(card) {
+  const f = card.document_facts;
+  if (!f || typeof f !== "object" || !Object.keys(f).length) return "";
+  const LBL = { land_ownership: "토지 소유", land_right: "사용 권원", land_tenure: "사용 권원", prior_decision: "사전결정", combined_building_agreement: "결합건축협정", existing_use: "기존 용도", answer: "답변" };
+  const label = (k) => LBL[k] || String(k).replace(/_/g, " ");
+  const rows = Object.entries(f).map(([k, v]) => {
+    if (v == null || v === "" || typeof v === "object") return "";
+    return `<div class="kv-cell"><div class="k">${esc(label(k))}</div><div class="v">${esc(String(v))}</div></div>`;
+  }).filter(Boolean).join("");
+  if (!rows) return "";
+  return `<div class="card card-pad mini-card"><div class="card-h" style="padding:0 0 6px">${I.check} 확인하신 정보</div><div class="kv-grid" style="padding:2px 0 0">${rows}</div></div>`;
 }
 
 // ── 주차(parking_req): 신규·있을 수 있음 ──
@@ -1077,22 +1106,37 @@ function docStageCard(d, num, isUijae) {
       const tip = `정해진 서식이 있어요. 양식(HWP/PDF)을 받아 작성해 제출하세요.${proviso}`;
       return `<span class="ds-form" title="${esc(tip)}">${I.down}<em>양식</em>${it.form_hwp ? `<a href="${esc(it.form_hwp)}" target="_blank" rel="noreferrer">HWP</a>` : ""}${it.form_pdf ? `<a href="${esc(it.form_pdf)}" target="_blank" rel="noreferrer">PDF</a>` : ""}</span>`;
     }
-    const tip = `정해진 양식은 없어요. ${law}${article ? " " + article : ""}에 적힌 내용대로 직접 준비해 제출하면 돼요.${proviso}`;
-    return `<span class="ds-self" title="${esc(tip)}">✍️ 직접 준비</span>`;
+    const tip = `자동으로 찾은 공식 양식 링크가 없어요. ${law}${article ? " " + article : ""} 원문 내용을 확인해 준비하세요.${proviso}`;
+    return `<span class="ds-self" title="${esc(tip)}">${I.info}<em>직접 준비</em></span>`;
+  };
+  const apOf = (it, inherited) => {
+    if (it && it.conditional) return it.applies || (inherited && inherited !== "must" ? inherited : "unknown");
+    return inherited && inherited !== "must" ? inherited : "must";
+  };
+  const apBadge = (ap) => ap === "must" ? `<span class="ds-ap ds-ap-m">필수</span>`
+    : ap === "yes" ? `<span class="ds-ap ds-ap-y">해당</span>`
+    : ap === "no" ? `<span class="ds-ap ds-ap-n">비해당</span>`
+    : `<span class="ds-ap ds-ap-u">확인필요</span>`;
+  const rowIcon = (ap) => {
+    const cls = ap === "no" ? "n" : ap === "unknown" ? "u" : "y";
+    const icon = ap === "no" ? I.x : ap === "unknown" ? I.cond : I.check;
+    return `<span class="dchk dchk-${cls}">${icon}</span>`;
+  };
+  const prepFor = (it, ap) => {
+    if (ap === "no") return `<span class="ds-off-note">제출 불요</span>`;
+    if (ap === "unknown") return `<span class="ds-wait">${I.cond}<em>해당 여부 확인 후 준비</em></span>`;
+    return prepHint(it);
   };
   const groupHtml = (g) => {
     const h = g.head || {};
     const name = String(h.doc_name || "").trim();
-    const ap = h.conditional ? (h.applies || "unknown") : "";   // 에이전트 조건부 판정
-    const apBadge = !h.conditional ? ""
-      : ap === "yes" ? `<span class="ds-ap ds-ap-y">해당</span>`
-      : ap === "no" ? `<span class="ds-ap ds-ap-n">비해당</span>`
-      : `<span class="ds-ap ds-ap-u">확인필요</span>`;
-    const areason = (h.conditional && h.assess_reason) ? `<div class="ds-areason">${esc(String(h.assess_reason))}</div>` : "";
+    const ap = apOf(h, "must");   // 에이전트 조건부 판정. 목은 부모 상태를 상속할 수 있음.
+    const areason = (h.conditional && h.assess_reason) ? `<div class="ds-areason">${linkifyTerms(String(h.assess_reason))}</div>` : "";
     const mokHtml = g.moks.map((m) => {
-      return `<div class="ds-mok"><span class="mbar"></span><span class="dtxt">${esc(String(m.doc_name || "").trim())}</span>${prepHint(m)}</div>`;
+      const mp = apOf(m, ap);
+      return `<div class="ds-mok${mp === "no" ? " ds-mok-off" : ""}"><span class="mbar"></span><span class="dtxt">${linkifyTerms(String(m.doc_name || "").trim())}${apBadge(mp)}</span>${prepFor(m, mp)}</div>`;
     }).join("");
-    return `<div class="ds-doc${ap === "no" ? " ds-doc-off" : ""}"><span class="dchk">${I.check}</span><span class="dtxt">${esc(name) || "(서류명 없음)"}${apBadge}${areason}</span>${prepHint(h)}</div>${mokHtml}`;
+    return `<div class="ds-doc${ap === "no" ? " ds-doc-off" : ""}">${rowIcon(ap)}<span class="dtxt">${name ? linkifyTerms(name) : "(서류명 없음)"}${apBadge(ap)}${areason}</span>${prepFor(h, ap)}</div>${mokHtml}`;
   };
 
   // 에이전트 판정(제출/확인필요/해당없음) — 카운트용. 렌더는 법정 호 순서 그대로(버킷 재정렬 안 함 — 검수 #3): 상태는 각 호 배지로.
