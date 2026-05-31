@@ -23,6 +23,7 @@ CASES = [
 
 VERDICT_SPACE = {"가능", "가능(조건부)", "위험·금지", "확인필요"}
 results = {}
+errs = 0
 for name, addr, use, area, floors in CASES:
     st = fresh_state(addr, use, area, floors)
     tid, cfg = make_config()
@@ -40,7 +41,7 @@ for name, addr, use, area, floors in CASES:
               f"cits={len(out.get('citations', []))} idx_hit={out.get('doc_index_hit')}")
         results[name] = payload
     except Exception as e:
-        print(f"ERR {name}: {type(e).__name__}: {e}")
+        errs += 1; print(f"ERR {name}: {type(e).__name__}: {e}")
 
 print("\n=== 어설션 ===")
 fail = 0
@@ -56,4 +57,7 @@ for name, p in results.items():
         print(f"  PASS {name} (verdict='{v}' in_space={v in VERDICT_SPACE})")
     except AssertionError as e:
         fail += 1; print(f"  FAIL {name}: {e}")
-print(f"\n캡처 {len(results)}건, 어설션 실패 {fail}건")
+print(f"\n캡처 {len(results)}건, 어설션 실패 {fail}건, 실행오류 {errs}건")
+if fail or errs:   # 테스트 게이트(검수 #11) — 실패/크래시 있으면 비정상 종료
+    sys.exit(1)
+print("QA OK")
