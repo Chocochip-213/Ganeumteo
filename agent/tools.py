@@ -365,13 +365,13 @@ def law_article_fetch(law_name: str, article: str, tool_call_id: Annotated[str, 
 
 # ── 서류·규모·작성주체 ───────────────────────────────────────
 @tool
-def docs_for_stage(stage_key: str, when_note: str = "", author_note: str = "", law_name: str = "", article: str = "", *, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+def docs_for_stage(stage_key: str, when_note: str = "", author_note: str = "", law_name: str = "", article: str = "", hang: str = "", *, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """단계별 시행규칙 첨부서류 호 전수(누락0).
     stage_key: work_type에 맞는 단계명 — 신축이면 '건축허가'·'착공신고'·'사용승인'; 용도변경이면 '용도변경'; 대수선이면 '대수선'; + 의제 stage_key(농지전용/산지전용/개발행위 등). placeholder 금지.
-    law_name·article: 그 단계 첨부서류 시행규칙 조문을 지정 — law_name(시행규칙명, 예 '건축법 시행규칙')·article(조, 예 '6'·'12의2'). law_article_fetch로 먼저 확인한 값만 전달(기억으로 짓지 말 것).
+    law_name·article: 그 단계 첨부서류 시행규칙 조문을 지정 — law_name(시행규칙명, 예 '건축법 시행규칙')·article(조, 예 '6'·'12의2'). law_article_fetch로 먼저 확인한 값만 전달(기억으로 짓지 말 것). hang: 첨부서류가 특정 항에 있으면 그 항(예 '②') 지정 가능(보통 생략 — 호 있는 첫 항 자동).
     when_note: 이 단계를 '언제' 하는지 한 줄(예 '공사 착수 직전 신고', '완료 후 사용 전 신청'). 건축법 절차 근거로 생성. 의제 단계면 '건축허가 시 함께 의제처리'. 모르면 빈 문자열.
     author_note: 작성주체를 법령근거로 한 줄(예 '신청인 본인; 설계도서는 건축사-건축법§23'·'감리완료보고서는 감리자-§25'). 법으로 판단(키워드 추측 금지). 모르면 빈 문자열."""
-    r = DOC.docs_for(stage_key, law_name=law_name or None, article=article or None)
+    r = DOC.docs_for(stage_key, law_name=law_name or None, article=article or None, hang_override=hang or None)
     if r["상태"] != "전수확보":
         return Command(update={"documents": [StageDocs(stage_key=stage_key, status="확인필요").model_dump()],
                                "_toolcalls": ["docs_for_stage"], "messages": [_tm(f"{stage_key} 서류 확인필요", tool_call_id)]})

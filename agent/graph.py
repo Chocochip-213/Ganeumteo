@@ -74,7 +74,7 @@ def completeness_guard(state):
     if state.get("_delegated") and "ordin_byeolpyo_fetch" not in called:
         miss.append("조례별표")
     if state.get("pnu"):   # med: 호출여부가 아니라 단계 커버리지 검사
-        doc_stages = {d.get("stage_key") for d in state.get("documents", [])}
+        doc_stages = {d.get("stage_key") for d in state.get("documents", []) if d.get("status") == "전수확보"}   # 실패(확인필요) 단계는 미커버 — 성공만 카운트(실패가 완료로 둔갑 방지)
         # 건축허가(=신축/증축)를 가져왔거나 아직 아무 단계도 안 가져왔으면 신축 3단계 완결성 요구. 그 외(용도변경 등 LLM이 다른 stage 선택)는 그 단계만 — 신축 가정 안 함.
         base = {"건축허가", "착공신고", "사용승인"} if ("건축허가" in doc_stages or not doc_stages) else set(doc_stages)
         need = base | {u.get("stage_key") for u in state.get("uijae", [])}

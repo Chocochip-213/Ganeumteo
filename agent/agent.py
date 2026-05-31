@@ -81,7 +81,7 @@ def stub_plan(state):
     done = {d["stage_key"] for d in state.get("documents", [])}
     for sk in need:
         if sk in _DOC_STAGES and sk not in done:   # stub은 스캐폴드 시드의 법령·조를 넘김(LLM은 fetch해 넘김)
-            return _call("docs_for_stage", {"stage_key": sk, "law_name": DOC.DOC_SOURCE[sk][0], "article": DOC.DOC_SOURCE[sk][1]})
+            return _call("docs_for_stage", {"stage_key": sk, "law_name": DOC.DOC_SOURCE[sk][0], "article": DOC.DOC_SOURCE[sk][1], "hang": DOC.DOC_SOURCE[sk][2] or ""})
     # 조건부 판정(stub은 LLM 아니므로 모두 unknown 기록 — 가드 통과용; 실 판정은 LLM 경로)
     if state.get("documents") and "assess_conditional_docs" not in called:
         ass = [{"stage_key": d["stage_key"], "ho": it["ho"], "applies": "unknown", "reason": "[stub] 미판정"}
@@ -164,6 +164,9 @@ def make_agent_node():
         def agent_node(state):
             return _agent_invoke(llm, [("system", AGENT_SYSTEM)] + _fit_context(state["messages"]))
         return agent_node, "LLM(ChatAnthropic)"
-    def agent_node(state):
-        return {"messages": [stub_plan(state)]}
-    return agent_node, "stub-planner(결정적)"
+    if os.environ.get("APP_MODE") == "stub":   # 명시적 stub 모드만(오프라인/테스트) — 운영은 LLM 필수
+        def agent_node(state):
+            return {"messages": [stub_plan(state)]}
+        return agent_node, "stub-planner(APP_MODE=stub)"
+    raise RuntimeError("LLM 미설정: LLM_BASE_URL / GMS_KEY / ANTHROPIC_API_KEY 중 하나 필요. "
+                       "stub은 테스트용 — FORCE_STUB=1 또는 APP_MODE=stub로 명시.")
