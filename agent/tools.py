@@ -84,9 +84,11 @@ def get_land_use(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> 
         land_area = float(raw_area) if raw_area not in (None, "", "0") else None
     except (TypeError, ValueError):
         land_area = None
-    upd = {"zone": zone, "zone_ucodes": uq, "reg_overlaps": regs, "road_side": road,
+    upd = {"zone": zone, "zone_ucodes": uq, "reg_overlaps": regs,
            "_toolcalls": ["get_land_use"],
            "messages": [_tm(f"용도지역={zone} 대지면적={land_area}㎡ 도로접면={road} UQ(전부 콤마로 이어 act_landuse에 그대로)={','.join(uq)} 규제={regs}", tool_call_id)]}
+    if road is not None:   # 도로접면 None이면 get_parcel이 잡은 값(맹지 등)을 덮어쓰지 않음 — 맹지 fail-closed 보존(last-write-wins 버그 차단)
+        upd["road_side"] = road
     if land_area is not None:
         upd["land_area"] = land_area
     if zone is None:   # 용도지역은 모든 필지에 존재 → None=NED 조회 실패(정당한 빈결과 아님), 정직 기권(검수 EB-3)
@@ -440,16 +442,17 @@ def compute_scale(floor_area: float, floor_count: int, tool_call_id: Annotated[s
 
 @tool
 def compute_envelope(land_area_m2: float, bcr_pct: float, far_pct: float,
-                     tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+                     tool_call_id: Annotated[str, InjectedToolCallId], basis_note: str = "") -> Command:
     """건폐율·용적률 → 최대 건축면적·연면적·약식층수(법 산식만, 결정적).
     산식: 최대건축면적=대지면적×건폐율%, 최대연면적=대지면적×용적률%, 약식층수=연면적/건축면적(상한 가늠).
     **bcr_pct(건폐율%)·far_pct(용적률%)는 인자 — LLM이 law_article_fetch로 국토계획법 시행령 §84/§85 또는 도시계획조례서 읽은 실제치를 전달**(도구에 용도지역→율 하드코딩 없음).
-    ScaleLimit를 확장(compute_scale와 같은 scale_limits 필드, envelope 3필드 채움). 용적률 법정상한은 범위(계획관리 50~100% 등)라 조례 실제치 아니면 envelope_note에 '법정상한 기준·실제치 확인필요' 강등 권장."""
+    **basis_note(선택)**: 이 가늠의 근거·한계 꼬리표를 LLM이 직접 작성해 전달(코드가 서술 생성 안 함). 예: 용적률을 법정상한 범위로만 읽었으면 '실제치 확인필요', 용도변경이면 '신축 가정 상한·현재는 직접 적용 아님'. 비우면 표시 안 함.
+    ScaleLimit를 확장(compute_scale와 같은 scale_limits 필드, envelope 3필드 채움)."""
     max_bldg = round(land_area_m2 * bcr_pct / 100.0, 1)
     max_floor = round(land_area_m2 * far_pct / 100.0, 1)
     approx = round(max_floor / max_bldg, 1) if max_bldg else None
     env = {"max_building_area": max_bldg, "max_floor_area": max_floor, "approx_floors": approx,
-           "envelope_note": "상한·가늠치(설계 後 확정). 율은 LLM이 시행령§84/§85·조례서 읽어 전달",
+           "envelope_note": basis_note or None,
            "notes": [f"대지 {land_area_m2}㎡ 건폐율 {bcr_pct}% 용적률 {far_pct}%"]}
     return Command(update={"envelope": env, "_toolcalls": ["compute_envelope"],   # scale_limits와 분리 키 — 병렬 동시쓰기 충돌(InvalidUpdateError) 방지
                            "messages": [_tm(f"envelope: 최대건축면적={max_bldg}㎡ 최대연면적={max_floor}㎡ 약식층수≈{approx} (건폐율{bcr_pct}%·용적률{far_pct}%)", tool_call_id)]})
@@ -644,8 +647,15 @@ def get_building_register(pnu: str, tool_call_id: Annotated[str, InjectedToolCal
     r = W.building_register(pnu)
     b = r.get("건물있음")
     if b is True:
-        msg = f"기존 건물 있음 — 주용도 {r.get('주용도')}, 연면적 {r.get('연면적')}㎡, 지상 {r.get('지상층수')}층, 동수 {r.get('동수')} → 신축 아님(용도변경/대수선 가능성). 빈땅으로 단정 금지."
-        fact = f"기존 건물 있음({r.get('주용도')})"
+        _ext = "".join([
+            f"·기타용도 {r.get('기타용도')}" if r.get('기타용도') else "",
+            f"·지하 {r.get('지하층수')}층" if r.get('지하층수') else "",
+            f", 구조 {r.get('구조')}" if r.get('구조') else "",
+            f", 건폐율 {r.get('건폐율')}%·용적률 {r.get('용적률')}%" if (r.get('건폐율') is not None or r.get('용적률') is not None) else "",
+            f", 사용승인일 {r.get('사용승인일')}" if r.get('사용승인일') else "",
+        ])
+        msg = f"기존 건물 있음 — 주용도 {r.get('주용도')}{_ext}, 연면적 {r.get('연면적')}㎡, 지상 {r.get('지상층수')}층, 동수 {r.get('동수')} → 신축 아님(용도변경/대수선 가능성). 빈땅으로 단정 금지. (as-built 건폐율·용적률·사용승인일·구조는 증축여력·기존불일치 판단 사실 — 네가 해석)"
+        fact = f"기존 건물({r.get('주용도')}{_ext})"
     elif b is False:
         msg = f"등록 건축물 없음(빈땅 가능) → 신축 쪽. {r.get('사유','')}"
         fact = "등록 건물 없음(빈땅 가능)"

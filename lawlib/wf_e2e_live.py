@@ -72,7 +72,9 @@ def building_register(pnu):
         return {"건물있음":False,"사유":"등록 건축물 없음(빈땅 가능)"}
     it=its[0]
     return {"건물있음":True,"동수":tc,"주용도":it.get("mainPurpsCdNm"),"연면적":it.get("totArea"),
-            "지상층수":it.get("grndFlrCnt"),"건물명":it.get("bldNm"),"건폐율":it.get("bcRat"),"용적률":it.get("vlRat")}
+            "지상층수":it.get("grndFlrCnt"),"건물명":it.get("bldNm"),"건폐율":it.get("bcRat"),"용적률":it.get("vlRat"),
+            "지하층수":it.get("ugrndFlrCnt"),"높이":it.get("heit"),"구조":it.get("strctCdNm"),
+            "사용승인일":it.get("useAprDay"),"기타용도":it.get("etcPurps")}
 
 def _S(v):
     if v is None:return ''
