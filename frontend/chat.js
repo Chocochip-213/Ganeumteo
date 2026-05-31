@@ -1079,25 +1079,22 @@ function docCards(card) {
   const docs = orderedDocs(card);
   if (!docs.length) return `<div class="card card-pad"><div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 제출 서류</span></div><p style="font-size:14px;color:var(--fg-3);margin:6px 0 0">서류 단계가 산출되지 않았어요. 관할 기관(해당 시·군·구청 건축과)에 직접 문의가 필요해요.</p></div>`;
   const uijaeKeys = new Set(arr(card.uijae).map((u) => u && u.stage_key).filter(Boolean));
+  const uijaeNames = arr(card.uijae).map((u) => u && u.permit_name).filter(Boolean);
   // 의제(농지전용 등)는 건축허가에 함께 처리(건축법 §11⑤) — 순번 안 매기고, 본 단계(건축허가·착공·사용승인)만 1·2·3.
   let n = 0;
   return docs.map((d) => {
     const u = uijaeKeys.has(String(d.stage || d.stage_key || ""));
-    return docStageCard(d, u ? 0 : ++n, u);
+    return docStageCard(d, u ? 0 : ++n, u, uijaeNames);
   }).join("");
 }
 
-function docStageCard(d, num, isUijae) {
+function docStageCard(d, num, isUijae, uijaeNames) {
   const stage = d.stage || d.stage_key || "단계";
   const ok = d.status === "전수확보";
   const law = d.law || "", article = d.article || "";
-  // 호별 그룹화: 최상위 호 = 제출서류, 목 = 직전 호의 하위 조건
+  // item_type(백엔드 법령구조 도출): group(각 목 헤더)·doc(제출 peer)·spec(세부)·cross_ref(관계법령=의제 위임). 1패스 렌더는 helpers 정의 후.
   const items = arr(d.items);
-  const groups = [];
-  items.forEach((it) => {
-    if (isMok(it.ho) && groups.length) { groups[groups.length - 1].moks.push(it); }
-    else { groups.push({ head: it, moks: [] }); }
-  });
+  const uNames = arr(uijaeNames);
 
   // 서류별: 별지 서식 있으면 양식 다운로드(HWP/PDF), 없으면 '직접 준비' 배지. 둘 다 hover로 준비법 설명.
   const prepHint = (it) => {
@@ -1127,24 +1124,39 @@ function docStageCard(d, num, isUijae) {
     if (ap === "unknown") return `<span class="ds-wait">${I.cond}<em>해당 여부 확인 후 준비</em></span>`;
     return prepHint(it);
   };
-  const groupHtml = (g) => {
-    const h = g.head || {};
-    const name = String(h.doc_name || "").trim();
-    const ap = apOf(h, "must");   // 에이전트 조건부 판정. 목은 부모 상태를 상속할 수 있음.
-    const areason = (h.conditional && h.assess_reason) ? `<div class="ds-areason">${linkifyTerms(String(h.assess_reason))}</div>` : "";
-    const mokHtml = g.moks.map((m) => {
-      const mp = apOf(m, ap);
-      return `<div class="ds-mok${mp === "no" ? " ds-mok-off" : ""}"><span class="mbar"></span><span class="dtxt">${linkifyTerms(String(m.doc_name || "").trim())}${apBadge(mp)}</span>${prepFor(m, mp)}</div>`;
-    }).join("");
-    return `<div class="ds-doc${ap === "no" ? " ds-doc-off" : ""}">${rowIcon(ap)}<span class="dtxt">${name ? linkifyTerms(name) : "(서류명 없음)"}${apBadge(ap)}${areason}</span>${prepFor(h, ap)}</div>${mokHtml}`;
+  // 1패스: item_type + 그룹 상속으로 각 행 역할·applies 계산(법정 호 순서 보존 — 재정렬 안 함, 검수 #3)
+  let curGroupAp = null;   // 직전 그룹 헤더 applies(자식 목-doc가 상속); null=그룹 문맥 없음
+  const rows = items.map((it) => {
+    const t = it.item_type || "doc";
+    if (t === "group") { curGroupAp = apOf(it, "must"); return { kind: "group", it, ap: curGroupAp }; }
+    if (t === "cross_ref") { if (!isMok(it.ho)) curGroupAp = null; return { kind: "xref", it }; }   // 목인 cross_ref는 형제 목의 그룹 상속 안 깸
+    if (t === "spec") { return { kind: "spec", it }; }
+    const child = isMok(it.ho);
+    const ap = apOf(it, child && curGroupAp ? curGroupAp : "must");
+    if (!child) curGroupAp = null;   // 최상위 doc은 그룹 문맥 종료
+    return { kind: "doc", it, ap, child };
+  });
+  // 카운트 = 실제 제출 doc만(group/spec/cross_ref 제외)
+  const submit = rows.filter((r) => r.kind === "doc" && (r.ap === "must" || r.ap === "yes"));
+  const check = rows.filter((r) => r.kind === "doc" && r.ap === "unknown");
+  const off = rows.filter((r) => r.kind === "doc" && r.ap === "no");
+  const xref = rows.filter((r) => r.kind === "xref");
+  const rowHtml = (r) => {
+    const nm = String(r.it.doc_name || "").trim();
+    if (r.kind === "group") {
+      return `<div class="ds-doc ds-group">${rowIcon(r.ap)}<span class="dtxt">${nm ? linkifyTerms(nm) : "(다음 각 목)"}${apBadge(r.ap)}<span class="ds-group-tag">아래 해당 서류</span></span></div>`;
+    }
+    if (r.kind === "xref") {
+      const tgt = uNames.length ? ("관계 의제(" + uNames.map(esc).join("·") + ") 있으면 그 단계 서류로 제출") : "관계 의제 있으면 그 단계 서류로 제출(없으면 해당없음)";
+      return `<div class="ds-doc ds-xref"><span class="dchk dchk-u">${I.info}</span><span class="dtxt">${nm ? linkifyTerms(nm) : "관계 법령 제출서류"}<span class="ds-xref-to">→ ${tgt}</span></span></div>`;
+    }
+    if (r.kind === "spec") {
+      return `<div class="ds-mok"><span class="mbar"></span><span class="dtxt">${nm ? linkifyTerms(nm) : ""}</span></div>`;
+    }
+    const areason = (r.it.conditional && r.it.assess_reason) ? `<div class="ds-areason">${linkifyTerms(String(r.it.assess_reason))}</div>` : "";
+    return `<div class="ds-doc${r.ap === "no" ? " ds-doc-off" : ""}${r.child ? " ds-doc-peer" : ""}">${rowIcon(r.ap)}<span class="dtxt">${nm ? linkifyTerms(nm) : "(서류명 없음)"}${apBadge(r.ap)}${areason}</span>${prepFor(r.it, r.ap)}</div>`;
   };
-
-  // 에이전트 판정(제출/확인필요/해당없음) — 카운트용. 렌더는 법정 호 순서 그대로(버킷 재정렬 안 함 — 검수 #3): 상태는 각 호 배지로.
-  const _ap = (g) => (g.head && g.head.conditional) ? (g.head.applies || "unknown") : "must";
-  const submit = groups.filter((g) => _ap(g) === "must" || _ap(g) === "yes");
-  const check = groups.filter((g) => _ap(g) === "unknown");
-  const off = groups.filter((g) => _ap(g) === "no");
-  const orderedHtml = groups.map(groupHtml).join("");   // 신청서 → 첨부 호 → 의 → 목, 법정 순서 보존
+  const orderedHtml = rows.map(rowHtml).join("");
 
   // 주신청서 양식 = 이 단계에서 직접 받아 작성하는 핵심 서식 → 최상단 강조 다운로드
   const applyHtml = (ok && (d.apply_hwp || d.apply_pdf))
@@ -1160,7 +1172,7 @@ function docStageCard(d, num, isUijae) {
   // 부제: 제출 N · 확인필요 M · 해당없음 K — 에이전트 판정 반영
   const lawLine = [law, article].filter(Boolean).join(" ");
   const sub = ok
-    ? `${esc(lawLine)}${lawLine ? " · " : ""}제출 ${submit.length}건${check.length ? ` · 확인필요 ${check.length}건` : ""}${off.length ? ` · 해당없음 ${off.length}건` : ""}`
+    ? `${esc(lawLine)}${lawLine ? " · " : ""}제출 ${submit.length}건${check.length ? ` · 확인필요 ${check.length}건` : ""}${off.length ? ` · 해당없음 ${off.length}건` : ""}${xref.length ? ` · 의제연계 ${xref.length}건` : ""}`
     : `${esc(lawLine || "시행규칙")} · 자동 조회 안 됨`;
 
   // 시점·의미: 에이전트 생성 한 줄(when_note) 우선, 없으면 본법 조문제목 — hover시 본법 원문 인용(when_quote)

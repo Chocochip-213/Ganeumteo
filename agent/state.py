@@ -33,6 +33,7 @@ class DocItem(BaseModel):
     doc_name: str
     has_proviso: bool = False
     conditional: bool = False          # 해당시만 제출(법 "~경우로 한정" 등)
+    item_type: str = "doc"             # doc(제출서류) | group(각 목 헤더) | spec(서류 세부명세) | cross_ref(관계법령 위임=의제서류로 해소)
     form_title: str = ""               # 이 호가 별지서식 참조시 양식명
     form_hwp: str = ""                 # 양식 HWP 다운로드 URL
     form_pdf: str = ""                 # 양식 PDF 다운로드 URL

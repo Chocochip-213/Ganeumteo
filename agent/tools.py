@@ -378,7 +378,7 @@ def docs_for_stage(stage_key: str, when_note: str = "", author_note: str = "", l
         return Command(update={"documents": [StageDocs(stage_key=stage_key, status="확인필요").model_dump()],
                                "_toolcalls": ["docs_for_stage"], "messages": [_tm(f"{stage_key} 서류 확인필요", tool_call_id)]})
     items = [DocItem(ho=d["호"], doc_name=d["서류"], has_proviso=d["단서있음"],
-                     conditional=d.get("조건부", False),
+                     conditional=d.get("조건부", False), item_type=d.get("유형", "doc"),
                      form_title=(d.get("서식") or {}).get("제목", ""),
                      form_hwp=(d.get("서식") or {}).get("hwp", ""),
                      form_pdf=(d.get("서식") or {}).get("pdf", "")).model_dump() for d in r["서류"]]

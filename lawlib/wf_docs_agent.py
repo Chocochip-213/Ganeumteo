@@ -21,6 +21,9 @@ DOC_SOURCE = {
 # '다만' 단서와 별개: 단서=내용수정, 조건부=서류 자체가 선택. 하드코딩 아님(조문 원문 파싱).
 _COND = ("한정한다", "경우만 해당", "해당 사항이 있는 경우", "해당하는 경우", "경우에 한한다", "경우에 한정", "경우로 한정")
 def _is_cond(t): return any(m in t for m in _COND)
+# cross_ref = 관계 법령(의제 등)에 위임된 제출물 — 그 법의 신청서·구비서류로 갈음(이 단계 아닌 의제 단계서 해소). 법 작성관례 마커(서류명 맵 아님).
+_XREF = ("제출하도록 의무화", "관계 법령에서 제출", "관계 법령에 따라 제출")
+def _is_xref(t): return any(m in t for m in _XREF)
 def _AL(v): return v if isinstance(v, list) else ([] if v is None else [v])
 def _S(v):
     if v is None: return ''
@@ -126,15 +129,24 @@ def docs_for(stage, law_name=None, article=None, hang_override=None):
                 head = txt.split('. 다만')[0].split('다만,')[0].strip()
                 if re.match(r'^[\d의.\s]*삭제', head): continue   # 폐지된 호 제외(호내용 '4. 삭제 <…>'처럼 호번호 접두 붙는 경우 포함)
                 ho_cond = _is_cond(txt)
+                moks = [m for m in _AL(ho.get("목")) if isinstance(m, dict)]
+                # item_type = 법령 구조서 도출(무하드코딩, 서류명 맵 아님): cross_ref(관계법령 위임) > group('각 목' 헤더, 목이 실제 제출물) > doc
+                if _is_xref(txt):
+                    ho_type = "cross_ref"
+                elif moks and "각 목" in head:   # 본문절(다만 前) 기준 — '각 목'이 다만 단서(대체수단)에 있으면 그 호는 group이 아니라 doc(목=대체 spec)
+                    ho_type = "group"
+                else:
+                    ho_type = "doc"
                 서류.append({"호": num, "서류": head, "단서있음": '다만' in txt,
-                            "조건부": ho_cond, "서식": _ref_form(txt, forms)})
-                for mok in _AL(ho.get("목")):   # #1 "다음 각 목" 케이스 — 목까지 전수(조건부는 부모 호 상속)
-                    if isinstance(mok, dict):
-                        mtxt = ' '.join(_S(mok.get("목내용")).split())
-                        if mtxt and not mtxt.startswith('삭제'):
-                            서류.append({"호": num + _S(mok.get("목번호")), "서류": mtxt,
-                                        "단서있음": '다만' in mtxt, "조건부": ho_cond or _is_cond(mtxt),
-                                        "서식": _ref_form(mtxt, forms)})
+                            "조건부": ho_cond, "서식": _ref_form(txt, forms), "유형": ho_type})
+                mok_type = "doc" if ho_type == "group" else "spec"   # 그룹헤더 하위=제출 peer / 일반 호 하위=세부명세(들여쓰기)
+                for mok in moks:   # #1 "다음 각 목" 케이스 — 목까지 전수(조건부는 부모 호 상속)
+                    mtxt = ' '.join(_S(mok.get("목내용")).split())
+                    if mtxt and not mtxt.startswith('삭제'):
+                        서류.append({"호": num + _S(mok.get("목번호")), "서류": mtxt,
+                                    "단서있음": '다만' in mtxt, "조건부": ho_cond or _is_cond(mtxt),
+                                    "서식": _ref_form(mtxt, forms),
+                                    "유형": "cross_ref" if _is_xref(mtxt) else mok_type})
             return {"단계": stage, "법령": lawnm, "조": f"제{jo_num}조" + (f"의{jo_ga}" if jo_ga else "") + (hang or ''),
                     "상태": "전수확보", "건수": len(서류), "신청서": 신청서, "서류": 서류, **_when(stage)}
     return {"단계": stage, "상태": "확인필요", "사유": f"제{jo_num}조{('의' + jo_ga) if jo_ga else ''} 조문 못찾음"}
