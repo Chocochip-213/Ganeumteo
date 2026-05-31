@@ -20,7 +20,7 @@ app = FastAPI(title="가늠터")
 
 
 @app.get("/diagnose/stream")
-def diagnose_stream(address: str, use_type: str, floor_area: float = None, floor_count: int = None, thread_id: str = None):
+def diagnose_stream(address: str, use_type: str = "", floor_area: float = None, floor_count: int = None, thread_id: str = None):
     tid, cfg = make_config(thread_id)
     st = fresh_state(address, use_type, floor_area, floor_count)
 

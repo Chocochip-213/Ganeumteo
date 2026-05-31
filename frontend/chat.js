@@ -482,7 +482,7 @@ async function chooseUse(useType, name, skipPush) {
 // 진단 시작 — 주소+용도만 전송(면적·층수 미정; 에이전트가 규모·작성주체·주차 판정에 필요하면 request_human_input으로 요청)
 function startDiagnose(c) {
   setStage(2);
-  const qs = new URLSearchParams({ address: c.loc.address, use_type: c.use_type || "근린생활시설" });
+  const qs = new URLSearchParams({ address: c.loc.address, use_type: c.use_type || "" });   // 빈 용도를 디폴트로 날조하지 않음 — 비우면 에이전트가 되물음(코드 가정 금지)
   runDiagnoseStream("/diagnose/stream?" + qs.toString());
 }
 
