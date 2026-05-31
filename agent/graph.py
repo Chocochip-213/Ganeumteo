@@ -51,11 +51,12 @@ def route_after_agent(state):
     base_t = state.get("_turn_base_tools", 0)
     if state.get("terminal_reason") in ("site_geocode_failed", "aborted", "error", "llm_error"):  # H4 조기종료 + LLM 실패 즉시 중단(다시하기 유도)
         return "abstain"
-    if state.get("_steps", 0) - base_s >= _STEP_HARDCAP:    # 이번 invoke 하드캡 — followup 누적 잠금 방지(검수 AF-3)
-        return "completeness_guard"
     last = state["messages"][-1]
-    if getattr(last, "tool_calls", None):
-        return "tools"
+    over = state.get("_steps", 0) - base_s
+    if getattr(last, "tool_calls", None):   # 펜딩 도구는 캡보다 먼저 실행해 ToolMessage로 매칭 — dangling tool_use(검수 #1) 방지
+        return "abstain" if over >= _STEP_HARDCAP + 12 else "tools"   # 폭주 한계서만 abstain(abstain은 LLM 재호출 없어 미매칭 tool_call 무해)
+    if over >= _STEP_HARDCAP:    # 텍스트 응답(펜딩 도구 없음) 시점에만 하드캡 — 안전. followup 누적 잠금 방지(검수 AF-3)
+        return "completeness_guard"
     if len(state.get("_toolcalls", [])) <= base_t and str(getattr(last, "content", "") or "").strip():
         return "chat_end"   # 이번 턴 새 도구 0 + 텍스트만 = 대화(진단 아님). 후속턴 잡담도 chat_end 도달(검수 AF-1)
     return "completeness_guard"
@@ -100,7 +101,8 @@ def completeness_guard(state):
         if cond_keys - assessed:
             miss.append(f"조건부판정:{len(cond_keys - assessed)}건")
     if miss and (state.get("_steps", 0) - state.get("_turn_base_steps", 0)) < _GUARD_BOUNCE_CAP and not stalled:
-        return {"_incomplete": True, "messages": [HumanMessage(f"아직 미확인: {miss}. 해당 도구로만 마저 조회하고, 끝나면 도구 없이 '완료'라 답하라.")]}
+        # 제어신호는 사용자 발화로 위장하지 않는다 — <system-reminder>로 명시(Claude Code 패턴). 모델은 이를 자동점검 지시로 읽음.
+        return {"_incomplete": True, "messages": [HumanMessage(f"<system-reminder>완결성 자동점검(사용자 발화 아님): 아직 미확인 {miss}. 해당 도구로만 마저 조회하고, 끝나면 도구 없이 '완료'라 답하라.</system-reminder>")]}
     if miss:   # 캡 도달 — 더 못 채움 → 기권 사유로 남기고 진행
         return {"_incomplete": False, "abstentions": [{"node": "completeness_guard", "사유": f"미충족 {miss}(스텝 캡)"}]}
     return {"_incomplete": False}
