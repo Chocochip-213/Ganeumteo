@@ -4,6 +4,8 @@
   "status": "완료",
   "card": {
    "verdict": "확인필요",
+   "verdict_labels": [],
+   "document_facts": {},
    "legal_reasoning": {
     "steps": [
      {
@@ -20,7 +22,7 @@
       "kind": "행위제한",
       "fact": "제1종일반주거지역 사무소",
       "basis": "data.go.kr 1613000",
-      "infer": "조례확인필요",
+      "infer": "가능(법령직접)",
       "leads": "",
       "status": "확정"
      },
@@ -54,6 +56,51 @@
      {
       "seq": 6,
       "kind": "규제효과",
+      "fact": "배출시설설치제한지역",
+      "basis": null,
+      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "leads": "",
+      "status": "확인필요"
+     },
+     {
+      "seq": 7,
+      "kind": "규제효과",
+      "fact": "(한강)폐기물매립시설 설치제한지역",
+      "basis": null,
+      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "leads": "",
+      "status": "확인필요"
+     },
+     {
+      "seq": 8,
+      "kind": "규제효과",
+      "fact": "공장설립승인지역",
+      "basis": null,
+      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "leads": "",
+      "status": "확인필요"
+     },
+     {
+      "seq": 9,
+      "kind": "규제효과",
+      "fact": "수질보전특별대책지역",
+      "basis": null,
+      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "leads": "",
+      "status": "확인필요"
+     },
+     {
+      "seq": 10,
+      "kind": "규제효과",
+      "fact": "도시지역",
+      "basis": null,
+      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "leads": "",
+      "status": "확인필요"
+     },
+     {
+      "seq": 11,
+      "kind": "규제효과",
       "fact": "제1종일반주거지역",
       "basis": "국토의 계획 및 이용에 관한 법률",
       "infer": "용도지역 및 용도지구에서의 건축물의 건축 제한 등",
@@ -61,7 +108,25 @@
       "status": "확정"
      },
      {
-      "seq": 7,
+      "seq": 12,
+      "kind": "규제효과",
+      "fact": "자연보전권역",
+      "basis": null,
+      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "leads": "",
+      "status": "확인필요"
+     },
+     {
+      "seq": 13,
+      "kind": "규제효과",
+      "fact": "중로2류(폭 15m~20m)",
+      "basis": null,
+      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "leads": "",
+      "status": "확인필요"
+     },
+     {
+      "seq": 14,
       "kind": "규제효과",
       "fact": "가축사육제한구역",
       "basis": "가축분뇨의 관리 및 이용에 관한 법률",
@@ -70,13 +135,31 @@
       "status": "확정"
      },
      {
-      "seq": 8,
+      "seq": 15,
+      "kind": "규제효과",
+      "fact": "하수처리구역",
+      "basis": null,
+      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "leads": "",
+      "status": "확인필요"
+     },
+     {
+      "seq": 16,
       "kind": "규모임계",
       "fact": "연면적/층수 임계",
       "basis": "law",
       "infer": "",
       "leads": "",
       "status": "확정"
+     },
+     {
+      "seq": 17,
+      "kind": "부담금",
+      "fact": "농지보전부담금: 개별공시지가 × 율% × 면적(㎡당 5만원 상한)",
+      "basis": null,
+      "infer": "율(rate_pct)·공시지가·면적 필요 — 농지법 시행령§53에서 농업진흥지역 안/밖 율을 읽어 재호출(값은 원문에서)",
+      "leads": "",
+      "status": "확인필요"
      }
     ],
     "verdict": "확인필요",
@@ -103,27 +186,503 @@
     {
      "stage": "건축허가",
      "count": 15,
-     "status": "전수확보"
+     "status": "전수확보",
+     "law": "건축법 시행규칙",
+     "article": "제6조①",
+     "when_note": "",
+     "when_law": "건축법 제11조",
+     "when_title": "건축허가",
+     "when_quote": "제11조(건축허가) ① 건축물을 건축하거나 대수선하려는 자는 특별자치시장ㆍ특별자치도지사 또는 시장ㆍ군수ㆍ구청장의 허가를 받아야 한다. 다만, 21층 이상의 건축물 등 대통령령으로 정하는 용도 및 규모의 건축물을 특별시나 광역시에 건축하려면 특별시장이나 광역시장의 허가를 받아야 한다.",
+     "author_note": "",
+     "apply_title": "건축ㆍ대수선ㆍ용도변경 (변경)허가 신청서",
+     "apply_hwp": "https://www.law.go.kr/LSW/flDownload.do?flSeq=161990111",
+     "apply_pdf": "https://www.law.go.kr/LSW/flDownload.do?flSeq=161990113",
+     "items": [
+      {
+       "ho": "1.",
+       "doc_name": "1. 건축할 대지의 범위에 관한 서류",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "1의2.",
+       "doc_name": "1의2. 건축할 대지의 소유에 관한 권리를 증명하는 서류",
+       "has_proviso": true,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "1의2.가.",
+       "doc_name": "가. 건축할 대지에 포함된 국유지 또는 공유지에 대해서는 허가권자가 해당 토지의 관리청과 협의하여 그 관리청이 해당 토지를 건축주에게 매각하거나 양여할 것을 확인한 서류",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "1의2.나.",
+       "doc_name": "나. 집합건물의 공용부분을 변경하는 경우에는 「집합건물의 소유 및 관리에 관한 법률」 제15조제1항에 따른 결의가 있었음을 증명하는 서류",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "1의2.다.",
+       "doc_name": "다. 분양을 목적으로 하는 공동주택을 건축하는 경우에는 그 대지의 소유에 관한 권리를 증명하는 서류. 다만, 법 제11조에 따라 주택과 주택 외의 시설을 동일 건축물로 건축하는 건축허가를 받아 「주택법 시행령」 제27조제1항에 따른 호수 또는 세대수 이상으로 건설ㆍ공급하는 경우 대지의 소유권에 관한 사항은 「주택법」 제21조를 준용한다.",
+       "has_proviso": true,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "1의3.",
+       "doc_name": "1의3. 법 제11조제11항제1호에 해당하는 경우에는 건축할 대지를 사용할 수 있는 권원을 확보하였음을 증명하는 서류",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "1의4.",
+       "doc_name": "1의4. 법 제11조제11항제2호 및 영 제9조의2제1항 각 호의 사유에 해당하는 경우에는 다음 각 목의 서류",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "1의4.가.",
+       "doc_name": "가. 건축물 및 해당 대지의 공유자 수의 100분의 80 이상의 서면동의서: 공유자가 자필로 서명하는 서면동의의 방법으로 하며, 주민등록증, 여권 등 신원을 확인할 수 있는 신분증명서의 사본을 첨부해야 한다. 다만, 공유자가 해외에 장기체류하거나 법인인 경우 등 불가피한 사유가 있다고 허가권자가 인정하는 경우에는 공유자가 인감도장을 날인하거나 서명한 서면동의서에 해당 인감증명서나 「본인서명사실 확인 등에 관한 법률」 제2조제3호에 따른 본인서명사실확인서 또는 같은 법 제7조제7항에 따른 전자본인서명확인서의 발급증을 첨부하는 방법으로 할 수 있다.",
+       "has_proviso": true,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "1의4.나.",
+       "doc_name": "나. 가목에 따라 동의한 공유자의 지분 합계가 전체 지분의 100분의 80 이상임을 증명하는 서류",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "1의4.다.",
+       "doc_name": "다. 영 제9조의2제1항 각 호의 어느 하나에 해당함을 증명하는 서류",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "1의4.라.",
+       "doc_name": "라. 해당 건축물의 개요",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "1의5.",
+       "doc_name": "1의5. 제5조에 따른 사전결정서(법 제10조에 따라 건축에 관한 입지 및 규모의 사전결정서를 받은 경우만 해당한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "2.",
+       "doc_name": "2. 별표 2의 설계도서(법 제10조에 따른 사전결정을 받은 경우에는 건축계획서 및 배치도를 제외한다)",
+       "has_proviso": true,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "3.",
+       "doc_name": "3. 법 제11조제5항 각 호에 따른 허가등을 받거나 신고를 하기 위하여 해당 법령에서 제출하도록 의무화하고 있는 신청서 및 구비서류(해당 사항이 있는 경우로 한정한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "4.",
+       "doc_name": "4. 별지 제27호의12서식에 따른 결합건축협정서(해당 사항이 있는 경우로 한정한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "결합건축 관리대장",
+       "form_hwp": "https://www.law.go.kr/LSW/flDownload.do?flSeq=161990527",
+       "form_pdf": "https://www.law.go.kr/LSW/flDownload.do?flSeq=161990529",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      }
+     ]
     },
     {
      "stage": "농지전용",
      "count": 7,
-     "status": "전수확보"
+     "status": "전수확보",
+     "law": "농지법 시행규칙",
+     "article": "제26조②",
+     "when_note": "",
+     "when_law": "",
+     "when_title": "",
+     "when_quote": "",
+     "author_note": "",
+     "apply_title": "농지전용(허가, 변경허가)신청서",
+     "apply_hwp": "https://www.law.go.kr/LSW/flDownload.do?flSeq=157618617",
+     "apply_pdf": "https://www.law.go.kr/LSW/flDownload.do?flSeq=157618619",
+     "items": [
+      {
+       "ho": "1.",
+       "doc_name": "1. 전용목적, 사업시행자 및 시행기간, 시설물의 배치도, 소요자금 조달방안, 시설물관리ㆍ운영계획, 「대기환경보전법 시행령」 별표 1의3 및 「물환경보전법 시행령」 별표 13에 따른 사업장 규모 등을 명시한 사업계획서",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "2.",
+       "doc_name": "2. 전용하려는 농지의 소유권을 입증하는 서류(토지 등기사항증명서로 확인할 수 없는 경우에 한정한다) 또는 사용승낙서ㆍ사용승낙의 뜻이 기재된 매매계약서등 사용권을 가지고 있음을 입증하는 서류",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "3.",
+       "doc_name": "3. 전용예정구역이 표시된 지적도등본 또는 임야도등본과 지형도",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "4.",
+       "doc_name": "4. 해당 농지의 전용이 농지개량시설 또는 도로의 폐지 및 변경이나 토사의 유출, 폐수의 배출, 악취의 발생 등을 수반하여 인근 농지의 농업경영과 농어촌생활환경의 유지에 피해가 예상되는 경우에는 대체시설의 설치 등 피해방지계획서",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "5.",
+       "doc_name": "5. 변경내용을 증명할 수 있는 서류를 포함한 변경사유서(변경허가 신청의 경우에 한정한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "6.",
+       "doc_name": "6. 농지보전부담금을 납부한 후 농지전용허가를 받은 자의 명의가 변경되는 경우에는 농지보전부담금의 권리 승계를 증명할 수 있는 서류(농지전용허가를 받은 자의 명의가 변경되어 변경허가 신청을 하는 경우에 한정한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "7.",
+       "doc_name": "7. 농지보전부담금 분할납부신청서(분할납부를 신청하는 경우에 한정한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      }
+     ]
     },
     {
      "stage": "개발행위",
      "count": 7,
-     "status": "전수확보"
+     "status": "전수확보",
+     "law": "국토의 계획 및 이용에 관한 법률 시행규칙",
+     "article": "제9조①",
+     "when_note": "",
+     "when_law": "",
+     "when_title": "",
+     "when_quote": "",
+     "author_note": "",
+     "apply_title": "개발행위(변경) 허가신청서",
+     "apply_hwp": "https://www.law.go.kr/LSW/flDownload.do?flSeq=162459915",
+     "apply_pdf": "https://www.law.go.kr/LSW/flDownload.do?flSeq=162459917",
+     "items": [
+      {
+       "ho": "1.",
+       "doc_name": "1. 토지의 소유권 또는 사용권 등 신청인이 당해 토지에 개발행위를 할 수 있음을 증명하는 서류",
+       "has_proviso": true,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "2.",
+       "doc_name": "2. 배치도 등 공사 또는 사업관련 도서(토지의 형질변경 및 토석채취인 경우에 한한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "3.",
+       "doc_name": "3. 설계도서(공작물의 설치인 경우에 한한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "4.",
+       "doc_name": "4. 당해 건축물의 용도 및 규모를 기재한 서류(건축물의 건축을 목적으로 하는 토지의 형질변경인 경우에 한한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "5.",
+       "doc_name": "5. 개발행위의 시행으로 폐지되거나 대체 또는 새로이 설치할 공공시설의 종류ㆍ세목ㆍ소유자 등의 조서 및 도면과 예산내역서(토지의 형질변경 및 토석채취인 경우에 한한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "6.",
+       "doc_name": "6. 법 제57조제1항의 규정에 의한 위해방지ㆍ환경오염방지ㆍ경관ㆍ조경 등을 위한 설계도서 및 그 예산내역서(토지분할인 경우를 제외한다)",
+       "has_proviso": true,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "7.",
+       "doc_name": "7. 법 제61조제3항의 규정에 의한 관계 행정기관의 장과의 협의에 필요한 서류",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      }
+     ]
     },
     {
      "stage": "착공신고",
      "count": 4,
-     "status": "전수확보"
+     "status": "전수확보",
+     "law": "건축법 시행규칙",
+     "article": "제14조",
+     "when_note": "",
+     "when_law": "건축법 제21조",
+     "when_title": "착공신고 등",
+     "when_quote": "제21조(착공신고 등) ① 제11조ㆍ제14조 또는 제20조제1항에 따라 허가를 받거나 신고를 한 건축물의 공사를 착수하려는 건축주는 국토교통부령으로 정하는 바에 따라 허가권자에게 공사계획을 신고하여야 한다.",
+     "author_note": "",
+     "apply_title": "착공신고서",
+     "apply_hwp": "https://www.law.go.kr/LSW/flDownload.do?flSeq=161990229",
+     "apply_pdf": "https://www.law.go.kr/LSW/flDownload.do?flSeq=161990231",
+     "items": [
+      {
+       "ho": "1.",
+       "doc_name": "1. 법 제15조에 따른 건축관계자 상호간의 계약서 사본(해당사항이 있는 경우로 한정한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "2.",
+       "doc_name": "2. 별표 4의2의 설계도서",
+       "has_proviso": true,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "3.",
+       "doc_name": "3. 법 제25조제11항에 따른 감리 계약서(해당 사항이 있는 경우로 한정한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "4.",
+       "doc_name": "4. 「건축사법 시행령」 제21조제2항에 따라 제출받은 보험증서 또는 공제증서의 사본",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      }
+     ]
     },
     {
      "stage": "사용승인",
-     "count": 10,
-     "status": "전수확보"
+     "count": 9,
+     "status": "전수확보",
+     "law": "건축법 시행규칙",
+     "article": "제16조",
+     "when_note": "",
+     "when_law": "건축법 제22조",
+     "when_title": "건축물의 사용승인",
+     "when_quote": "제22조(건축물의 사용승인) ① 건축주가 제11조ㆍ제14조 또는 제20조제1항에 따라 허가를 받았거나 신고를 한 건축물의 건축공사를 완료[하나의 대지에 둘 이상의 건축물을 건축하는 경우 동(棟)별 공사를 완료한 경우를 포함한다]한 후 그 건축물을 사용하려면 제25조제6항에 따라 공사감리자가 작성한 감리완료보고서(같은 조 제1항에 따른 공사감리자를 지정한 경",
+     "author_note": "",
+     "apply_title": "(임시)사용승인 신청서",
+     "apply_hwp": "https://www.law.go.kr/LSW/flDownload.do?flSeq=161990255",
+     "apply_pdf": "https://www.law.go.kr/LSW/flDownload.do?flSeq=161990257",
+     "items": [
+      {
+       "ho": "1.",
+       "doc_name": "1. 법 제25조제1항에 따른 공사감리자를 지정한 경우 : 공사감리완료보고서",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "2.",
+       "doc_name": "2. 법 제11조, 제14조 또는 제16조에 따라 허가ㆍ변경허가를 받았거나 신고ㆍ변경신고를 한 도서에 변경이 있는 경우 : 설계변경사항이 반영된 최종 공사완료도서",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "3.",
+       "doc_name": "3. 법 제14조제1항에 따른 신고를 하여 건축한 건축물 : 배치 및 평면이 표시된 현황도면",
+       "has_proviso": false,
+       "conditional": false,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "5.",
+       "doc_name": "5. 법 제22조제4항 각 호에 따른 사용승인ㆍ준공검사 또는 등록신청 등을 받거나 하기 위하여 해당 법령에서 제출하도록 의무화하고 있는 신청서 및 첨부서류(해당 사항이 있는 경우로 한정한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "6.",
+       "doc_name": "6. 법 제25조제11항에 따라 감리비용을 지불하였음을 증명하는 서류(해당 사항이 있는 경우로 한정한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "7.",
+       "doc_name": "7. 법 제48조의3제1항에 따라 내진능력을 공개해야 하는 건축물인 경우: 「건축물의 구조기준 등에 관한 규칙」 제58조에 따른 구조안전 및 내진설계 확인서(같은 규칙 제60조의2제2항 전단에 해당하는 경우로 한정한다)",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "8.",
+       "doc_name": "8. 사용승인을 신청할 건축물이 영 별표 1 제15호가목에 따른 생활숙박시설(「건축물의 분양에 관한 법률 시행령」 제2조제2호에 따른 것으로 한정한다)인 경우에는 다음 각 목의 서류",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": "",
+       "applies": "unknown",
+       "assess_reason": "[stub] 미판정"
+      },
+      {
+       "ho": "8.가.",
+       "doc_name": "가. 「건축물의 분양에 관한 법률 시행령」 제9조제1항제9호의3에 따른 내용(분양받은 자의 서명이나 날인이 들어간 「건축물의 분양에 관한 법률 시행규칙」 별지 제2호의2서식의 생활숙박시설 관련 확인서를 포함한다)의 사본",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      },
+      {
+       "ho": "8.나.",
+       "doc_name": "나. 분양계약서 등 분양계약이 「공중위생관리법 시행규칙」 별표 1 Ⅱ 제1호에 따른 숙박업의 시설 및 설비기준에 적합함을 증명하는 서류의 사본",
+       "has_proviso": false,
+       "conditional": true,
+       "form_title": "",
+       "form_hwp": "",
+       "form_pdf": ""
+      }
+     ]
     }
    ],
    "scale_limits": {
@@ -131,27 +690,101 @@
     "structural_safety_required": true,
     "notes": [
      "연면적 600.0㎡·5층"
-    ]
+    ],
+    "max_building_area": null,
+    "max_floor_area": null,
+    "approx_floors": null,
+    "envelope_note": null
    },
+   "parking_req": null,
+   "levies": [
+    {
+     "levy_type": "농지보전부담금",
+     "formula": "개별공시지가 × 율% × 면적(㎡당 5만원 상한)",
+     "amount": null,
+     "status": "확인필요",
+     "note": "율(rate_pct)·공시지가·면적 필요 — 농지법 시행령§53에서 농업진흥지역 안/밖 율을 읽어 재호출(값은 원문에서)",
+     "citation": null
+    }
+   ],
    "author": {
     "requires_architect": true,
-    "reason": "신축 연면적 600㎡ → 단서(85㎡↓증축/200㎡↓대수선) 미해당"
+    "reason": " 연면적 600㎡ — §23① 원칙·단서 원문 확보(면제 해당여부는 단서 원문 대조로 판단)"
    },
+   "term_notes": null,
    "reg_effects": [
+    {
+     "reg_name": "배출시설설치제한지역",
+     "law_name": null,
+     "article": null,
+     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "status": "확인필요"
+    },
+    {
+     "reg_name": "(한강)폐기물매립시설 설치제한지역",
+     "law_name": null,
+     "article": null,
+     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "status": "확인필요"
+    },
+    {
+     "reg_name": "공장설립승인지역",
+     "law_name": null,
+     "article": null,
+     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "status": "확인필요"
+    },
+    {
+     "reg_name": "수질보전특별대책지역",
+     "law_name": null,
+     "article": null,
+     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "status": "확인필요"
+    },
+    {
+     "reg_name": "도시지역",
+     "law_name": null,
+     "article": null,
+     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "status": "확인필요"
+    },
     {
      "reg_name": "제1종일반주거지역",
      "law_name": "국토의 계획 및 이용에 관한 법률",
      "article": "제76조",
-     "effect": "용도지역 및 용도지구에서의 건축물의 건축 제한 등"
+     "effect": "용도지역 및 용도지구에서의 건축물의 건축 제한 등",
+     "status": "근거확보"
+    },
+    {
+     "reg_name": "자연보전권역",
+     "law_name": null,
+     "article": null,
+     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "status": "확인필요"
+    },
+    {
+     "reg_name": "중로2류(폭 15m~20m)",
+     "law_name": null,
+     "article": null,
+     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "status": "확인필요"
     },
     {
      "reg_name": "가축사육제한구역",
      "law_name": "가축분뇨의 관리 및 이용에 관한 법률",
      "article": "제8조",
-     "effect": "가축사육의 제한 등"
+     "effect": "가축사육의 제한 등",
+     "status": "근거확보"
+    },
+    {
+     "reg_name": "하수처리구역",
+     "law_name": null,
+     "article": null,
+     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "status": "확인필요"
     }
    ],
-   "citations": 4,
+   "citations": 5,
    "abstentions": []
   },
   "abstentions": []
@@ -161,26 +794,17 @@
    "source": "vworld",
    "law_name": null,
    "article": null,
-   "title": "필지 LP_PA_CBND_BUBUN",
-   "quote": "지목 답, 도로접면 None",
+   "title": "지적(필지) 정보 — 국토교통부 연속지적도",
+   "quote": "지목 답",
    "url": null,
    "extract_method": null
   },
   {
-   "source": "ordin",
-   "law_name": "양평군 도시계획 조례",
-   "article": "0012 [별표 12] 일반공업지역 안에서 건축할 수 있는 건축",
+   "source": "data",
+   "law_name": "행위제한(국토부 1613000)",
+   "article": "건축법 시행령 별표 1  제3호바목",
    "title": null,
-   "quote": "별표 12 (개정 2006. 10. 4, 2007. 8. 3, 2008. 11. 26, 2014. 10. 31, 2017. 7. 10.) 밼 ) ) 밼 일반공업지역 안에서 건축할 수 있는 건축물(제",
-   "url": null,
-   "extract_method": "인덱스청크"
-  },
-  {
-   "source": "law",
-   "law_name": "건축법 시행령",
-   "article": "0001",
-   "title": null,
-   "quote": "■ 건축법 시행령 [별표 1] <개정 2025. 8. 26.> 용도별 건축물의 종류(제3조의5 관련) 1. 단독주택[단독주택의 형태를 갖춘 가정어린이집·공동생활가정·지역아동센 터ㆍ공동육아나눔터(「아이돌봄 지원법」 제19조에 따른 공동육아나눔터를 말한다. 이하 같다)ㆍ작은도서관(「도서관법」 제4조제2항제1호가목에 따른 작은도서관을 말하며, 해당 주택의 1층에",
+   "quote": "건강보험공단 사무소 → 가능",
    "url": null,
    "extract_method": null
   },
@@ -189,7 +813,25 @@
    "law_name": "건축법",
    "article": "§23①",
    "title": null,
-   "quote": "설계는 건축사가 아니면 할 수 없다",
+   "quote": "① 제11조제1항에 따라 건축허가를 받아야 하거나 제14조제1항에 따라 건축신고를 하여야 하는 건축물 또는 「주택법」 제66조제1항 또는 제2항에 따른 리모델링을 하는 건축물의 건축등을 위한 설계는 건축사가 아니면 할 수 없다. 다만, 다음 각 호의 어느 하나에 해당하는 경우에는 그러하지 아니하다. <개정 2014.5.28, 2016.1.19>",
+   "url": null,
+   "extract_method": null
+  },
+  {
+   "source": "law",
+   "law_name": "국토의 계획 및 이용에 관한 법률 시행령",
+   "article": "제84조(용도지역안에서의 건폐율)",
+   "title": null,
+   "quote": "제84조(용도지역안에서의 건폐율) ①법 제77조제1항 및 제2항에 따른 건폐율은 다음 각 호의 범위에서 특별시ㆍ광역시ㆍ특별자치시ㆍ특별자치도ㆍ시 또는 군의 도시ㆍ군계획조례가 정하는 비율 이하로 한다. <개정 2012.4.10, 2019.12.31> 1. 제1종전용주거지역 : 50퍼센트 이하 2. 제2종전용주거지역 : 50퍼센트 이하 3. 제1종일반주거지역 :",
+   "url": null,
+   "extract_method": null
+  },
+  {
+   "source": "law",
+   "law_name": "주차장법 시행령",
+   "article": "별표 1",
+   "title": null,
+   "quote": "부설주차장의 설치대상 시설물 종류 및 설치기준(제6조제1항 관련)",
    "url": null,
    "extract_method": null
   }

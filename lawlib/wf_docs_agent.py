@@ -126,13 +126,13 @@ def docs_for(stage, law_name=None, article=None, hang_override=None):
                 head = txt.split('. 다만')[0].split('다만,')[0].strip()
                 if re.match(r'^[\d의.\s]*삭제', head): continue   # 폐지된 호 제외(호내용 '4. 삭제 <…>'처럼 호번호 접두 붙는 경우 포함)
                 ho_cond = _is_cond(txt)
-                서류.append({"호": num, "서류": head[:80], "단서있음": '다만' in txt,
+                서류.append({"호": num, "서류": head, "단서있음": '다만' in txt,
                             "조건부": ho_cond, "서식": _ref_form(txt, forms)})
                 for mok in _AL(ho.get("목")):   # #1 "다음 각 목" 케이스 — 목까지 전수(조건부는 부모 호 상속)
                     if isinstance(mok, dict):
                         mtxt = ' '.join(_S(mok.get("목내용")).split())
                         if mtxt and not mtxt.startswith('삭제'):
-                            서류.append({"호": num + _S(mok.get("목번호")), "서류": mtxt[:80],
+                            서류.append({"호": num + _S(mok.get("목번호")), "서류": mtxt,
                                         "단서있음": '다만' in mtxt, "조건부": ho_cond or _is_cond(mtxt),
                                         "서식": _ref_form(mtxt, forms)})
             return {"단계": stage, "법령": lawnm, "조": f"제{jo_num}조" + (f"의{jo_ga}" if jo_ga else "") + (hang or ''),
