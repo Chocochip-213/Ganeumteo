@@ -75,7 +75,9 @@ def completeness_guard(state):
         miss.append("조례별표")
     if state.get("pnu"):   # med: 호출여부가 아니라 단계 커버리지 검사
         doc_stages = {d.get("stage_key") for d in state.get("documents", [])}
-        need = {"건축허가", "착공신고", "사용승인"} | {u.get("stage_key") for u in state.get("uijae", [])}
+        # 건축허가(=신축/증축)를 가져왔거나 아직 아무 단계도 안 가져왔으면 신축 3단계 완결성 요구. 그 외(용도변경 등 LLM이 다른 stage 선택)는 그 단계만 — 신축 가정 안 함.
+        base = {"건축허가", "착공신고", "사용승인"} if ("건축허가" in doc_stages or not doc_stages) else set(doc_stages)
+        need = base | {u.get("stage_key") for u in state.get("uijae", [])}
         if not need.issubset(doc_stages):
             miss.append("서류전수:" + ",".join(sorted(need - doc_stages)))
         # 조건부('해당시만') 서류 미판정 검사 — 에이전트가 케이스로 판정(필요시 사용자 질의)해야 종료(최상위 호만, 목 제외)

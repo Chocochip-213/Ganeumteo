@@ -5,7 +5,7 @@
 import re
 import law_fetch as L
 
-# 시드 = 단계/의제 → (시행규칙명, 조문번호, 항번호 or None). '어느 조 보나'만.
+# stub(비-LLM 테스트 스캐폴드) 전용 시드: 단계 → (시행규칙명, 조, 항). _UIJAE/_PERMIT처럼 비-LLM 결정용 고정 데이터.
 DOC_SOURCE = {
  "건축허가": ("건축법 시행규칙", "6", "①"),
  "착공신고": ("건축법 시행규칙", "14", None),
@@ -14,6 +14,8 @@ DOC_SOURCE = {
  "개발행위": ("국토의 계획 및 이용에 관한 법률 시행규칙", "9", "①"),
  "산지전용": ("산지관리법 시행규칙", "10", "②"),
 }
+# ↑ stub 전용. 실 LLM 경로는 에이전트가 fetch한 law_name·article을 docs_for_stage에 직접 넘김
+#   → docs_for엔 절차→법조 하드코딩 맵 없음(과적합 0, ANY 절차 범용).
 
 # 조건부 마커 = 법 작성관례("~경우로 한정/경우만 해당/해당 사항이 있는 경우" = 해당시만 제출).
 # '다만' 단서와 별개: 단서=내용수정, 조건부=서류 자체가 선택. 하드코딩 아님(조문 원문 파싱).
@@ -82,18 +84,22 @@ def _ref_form(txt, forms):
         if key in forms: return forms[key]
     return None
 
-def docs_for(stage):
-    """단계명 → 시행규칙 조문 라이브 fetch → 첨부서류 호 전수."""
-    if stage not in DOC_SOURCE:
-        return {"단계": stage, "상태": "확인필요", "사유": "시드 미등록"}
-    lawnm, jo, hang = DOC_SOURCE[stage]
+def docs_for(stage, law_name=None, article=None, hang_override=None):
+    """단계 → 시행규칙 조문 라이브 fetch → 첨부서류 호 전수.
+    법령·조는 호출자가 지정: 실 LLM 경로=에이전트가 fetch해 확인한 law_name·article 전달 / stub=스캐폴드 시드 전달.
+    docs_for 자체엔 절차→법조 하드코딩 맵 없음 → ANY 절차 범용."""
+    if not (law_name and article):
+        return {"단계": stage, "상태": "확인필요", "사유": "법령·조 미지정(law_name·article 필요)"}
+    lawnm, jo, hang = law_name, str(article).replace("제", "").replace("조", "").strip(), hang_override
     j = _law(lawnm)
     if not j:
         return {"단계": stage, "상태": "확인필요", "사유": f"{lawnm} fetch 실패"}
     법 = j['법령']
     forms = _forms_index(법)
+    _jm = re.match(r'(\d+)(?:의(\d+))?', str(jo))   # '12의2'→조문번호12·조문가지번호2 분리(조의X 지원)
+    jo_num, jo_ga = (_jm.group(1), _jm.group(2) or '') if _jm else (str(jo), '')
     for u in _AL(법['조문']['조문단위']):
-        if isinstance(u, dict) and str(u.get('조문번호')) == str(jo) and u.get('조문여부') == '조문':
+        if isinstance(u, dict) and str(u.get('조문번호')) == jo_num and (not jo_ga or str(u.get('조문가지번호') or '') == jo_ga) and u.get('조문여부') == '조문':
             # 대상 항 찾기 (항 지정시 그 항, 없으면 조문직속 호 또는 첫 항)
             target_ho = []
             hangs = _AL(u.get('항'))
@@ -101,8 +107,12 @@ def docs_for(stage):
                 for h in hangs:
                     if isinstance(h, dict) and h.get('항번호') == hang:
                         target_ho = _AL(h.get('호')); break
-            if not target_ho:  # 항 직속 호 없으면 조문 직속 또는 첫 항
-                target_ho = _AL(u.get('호')) or (_AL(hangs[0].get('호')) if hangs else [])
+            if not target_ho:  # 항 미지정/미발견: 조문 직속 호, 없으면 '호를 가진 첫 항'(농지 §26처럼 ②항에 서류 있는 경우 대응)
+                target_ho = _AL(u.get('호'))
+                if not target_ho:
+                    for h in hangs:
+                        if isinstance(h, dict) and _AL(h.get('호')):
+                            target_ho = _AL(h.get('호')); break
             # 주신청서 = 조문 전체(조문내용+전 항)의 첫 별지서식 참조 — 신청서 항과 첨부서류 항이 다를 수 있음
             jo_txt = _S(u.get('조문내용')) + ' ' + ' '.join(_S(h.get('항내용')) for h in hangs if isinstance(h, dict))
             신청서 = _ref_form(jo_txt, forms)   # 주신청서 양식(다운로드 링크)
