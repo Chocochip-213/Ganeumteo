@@ -187,7 +187,7 @@ def build_reasoning(state):
     strong_regs = [r for r in regs if ("개발제한" in r) or ("농업진흥" in r)]
     out = {}
     if strong_regs and verdict in ("가능", "가능(조건부)", "조건부"):
-        grounded = {e.get("reg_name") for e in state.get("reg_effects", [])}
+        grounded = {e.get("reg_name") for e in state.get("reg_effects", []) if e.get("status") == "근거확보"}
         if not any(any(sr in (g or "") or (g or "") in sr for g in grounded) for sr in strong_regs):
             verdict = "확인필요"
             out["abstentions"] = [{"node": "build_reasoning", "사유": f"강한 행위제한 규제중첩 {strong_regs} — 행위제한 조문 미확보, 사람검토 필요"}]

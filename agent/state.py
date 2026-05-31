@@ -74,6 +74,7 @@ class RegEffect(BaseModel):
     law_name: Optional[str] = None
     article: Optional[str] = None
     effect: str = ""
+    status: str = "근거확보"   # 근거확보 | 확인필요(미해결도 카드서 안 사라지게 보존)
 
 
 class AuthorRule(BaseModel):

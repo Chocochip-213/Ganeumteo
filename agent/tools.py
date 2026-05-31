@@ -67,7 +67,7 @@ def get_parcel(x: float, y: float, tool_call_id: Annotated[str, InjectedToolCall
                     quote=f"지목 {jimok}" + (f", 도로접면 {road}" if road else "")).model_dump()
     return Command(update={"pnu": pnu, "area_cd": pnu[:5], "jimok": jimok, "sigungu": sigungu,
                            "road_side": road, "citations": [cite], "_toolcalls": ["get_parcel"],
-                           "messages": [_tm(f"PNU={pnu} 지목={jimok} 도로접면={road} 시군구={sigungu} ({addr})", tool_call_id)]})
+                           "messages": [_tm(f"PNU={pnu} 행정코드={pnu[:5]} 지목={jimok} 도로접면={road} 시군구={sigungu} ({addr})", tool_call_id)]})
 
 
 @tool
@@ -215,12 +215,12 @@ def _ordin_bodytext(sigungu, zone):
 
 
 @tool
-def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """지자체 도시계획조례 '{zone} 건축가능 별표' BodyText. 사전인덱스 HIT 우선→MISS면 라이브 추출. 멀티홉 1홉."""
+def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, InjectedToolCallId], area_cd: str = "") -> Command:
+    """지자체 도시계획조례 '{zone} 건축가능 별표' BodyText. 사전인덱스 HIT 우선→MISS면 라이브 추출. 멀티홉 1홉. area_cd(get_parcel의 행정코드5)를 주면 같은 zone명이 여러 지자체에 겹쳐도 정확매칭(없으면 시군구명 폴백)."""
     # 가늠터 RAG: 사전인덱싱 HIT-first (infra 미연결/MISS/예외면 조용히 라이브 폴백 — Command 형태 불변)
     try:
         from infra.ordin_rag import lookup_ordin
-        hit = lookup_ordin(sigungu, zone)
+        hit = lookup_ordin(sigungu, zone, area_cd)
     except Exception:
         hit = None
     if hit:
@@ -545,7 +545,7 @@ def author_rule_tool(floor_area: float, work_type: str, tool_call_id: Annotated[
     """작성주체(건축사 필수 여부). 건축법 §23① 원칙·단서를 라이브 fetch해 원문(grounding)을 반환.
     면제(비건축사 가능)는 §23① 단서의 좁은 예외(소규모 증축·대수선 등) — 단서 원문을 읽고 이 케이스가 면제에 해당하는지는 네가 판단하라.
     requires_architect는 fail-closed로 기본 '필수'(True); 단서 면제에 명확히 해당하면 네 서술로 그 근거(어느 호·면적)를 밝혀라."""
-    a = RM.author_rule(int(floor_area), work_type or "신축")
+    a = RM.author_rule(int(floor_area), work_type)   # 신축 기본 가정 제거(무하드코딩) — 작업유형은 §23① 판정에 안 쓰임(표시용)
     if a.get("상태") == "확인필요":   # §23① fetch 실패 → 기권(fail-closed, 날조 금지)
         return Command(update={"abstentions": [{"node": "author_rule_tool", "사유": a.get("사유", "§23① 미확보")}],
                                "_toolcalls": ["author_rule_tool"],
@@ -555,7 +555,7 @@ def author_rule_tool(floor_area: float, work_type: str, tool_call_id: Annotated[
     cite = Citation(source="law", law_name="건축법", article="§23①", quote=a.get("원칙", "")[:200]).model_dump()
     proviso = " / ".join(a.get("단서", [])) or "(단서 없음)"
     return Command(update={"author": au, "citations": [cite], "_toolcalls": ["author_rule_tool"],
-                           "messages": [_tm(f"작성주체 §23① — 원칙: {a.get('원칙','')[:120]} | 단서(면제호): {proviso[:400]} | 케이스: {work_type or '신축'} {int(floor_area)}㎡(면제 해당여부는 단서 원문 대조로 판단)", tool_call_id)]})
+                           "messages": [_tm(f"작성주체 §23① — 원칙: {a.get('원칙','')[:120]} | 단서(면제호): {proviso[:400]} | 케이스: {work_type or '작업유형 미정'} {int(floor_area)}㎡(면제 해당여부는 단서 원문 대조로 판단)", tool_call_id)]})
 
 
 @tool
@@ -564,9 +564,12 @@ def reg_effect_resolve_tool(reg_names: List[str], tool_call_id: Annotated[str, I
     out, eff = REG.resolve(reg_names), []
     for r in out:
         if r["상태"] == "근거확보":
-            eff.append(RegEffect(reg_name=r["규제"], law_name=r["법령"], article=r["조"], effect=r["제목"]).model_dump())
+            eff.append(RegEffect(reg_name=r["규제"], law_name=r["법령"], article=r["조"], effect=r["제목"], status="근거확보").model_dump())
+        else:   # 미해결(확인필요)도 보존 — 최종 카드서 사라지지 않게 정직 노출(fail-closed)
+            eff.append(RegEffect(reg_name=r["규제"], effect=r.get("근거", ""), status="확인필요").model_dump())
+    n_ok = sum(1 for r in out if r["상태"] == "근거확보")
     return Command(update={"reg_effects": eff, "_toolcalls": ["reg_effect_resolve_tool"],
-                           "messages": [_tm(f"규제효과 {len(eff)}건 근거확보(/{len(out)})", tool_call_id)]})
+                           "messages": [_tm(f"규제효과 {n_ok}건 근거확보·{len(out) - n_ok}건 확인필요(/{len(out)})", tool_call_id)]})
 
 
 # ── agent 판단 커밋 (record_*) ───────────────────────────────
