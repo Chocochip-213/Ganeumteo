@@ -860,6 +860,17 @@ function parkingCard(card) {
   return `<div class="card card-pad mini-card"><div class="card-h" style="padding:0 0 6px">🅿 주차 기준</div><div class="kv-grid" style="padding:2px 0 0">${rows}</div></div>`;
 }
 
+// 다차원 판정 축(LLM이 record_verdict로 케이스마다 생성 — 코드 고정목록 없음). 종합 verdict 아래 투명 표시.
+function verdictAxes(card) {
+  const labels = Array.isArray(card.verdict_labels) ? card.verdict_labels : [];
+  if (!labels.length) return "";
+  const tone = (s) => (s === "충족" ? "ok" : s === "불가" ? "no" : "mid");
+  const rows = labels.map((l) =>
+    `<div class="vax ${tone(l.status)}"><span class="vax-s">${esc(l.status || "")}</span><div class="vax-b"><div class="vax-d">${esc(l.dimension || "")}</div><div class="vax-r">${esc(l.reason || "")}</div></div></div>`
+  ).join("");
+  return `<div class="card-h">${I.list} 판정 축별 결과</div><div class="verdict-axes">${rows}</div>`;
+}
+
 // ── verdict-card (level: classifyVerdict.tone → go/cond/check) ──
 function verdictCard(env, card, cits, full) {
   const v = card.verdict;
@@ -928,6 +939,7 @@ function verdictCard(env, card, cits, full) {
     <div class="vc-body">${bodyHtml}</div>
     <div class="vc-caveat">${I.info}<span>이건 <b>입력하신 조건 기준의 사전 진단</b>이에요. 최종 허가 여부는 관할 기관 확인이 필요해요.</span></div>
     ${kv.length ? `<div class="kv-grid">${kv.map(([k, val]) => `<div class="kv-cell"><div class="k">${esc(k)}</div><div class="v">${val}</div></div>`).join("")}</div>` : ""}
+    ${verdictAxes(card)}
     ${isAbstainShape ? abstainBlock(card) : ""}
     ${checkRows ? `<div class="card-h">${I.list} 검토한 항목</div><div class="check-list">${checkRows}</div>` : ""}
     ${riskHtml ? `<div class="card-h">${I.bang} 미리 알아둘 점</div><div class="risk-list">${riskHtml}</div>` : ""}

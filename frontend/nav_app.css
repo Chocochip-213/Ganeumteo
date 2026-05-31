@@ -457,6 +457,17 @@ input, textarea { font-family: inherit; }
 .verdict-card .check-row.na { color: var(--fg-2); }
 .verdict-card .check-row.na .ck { background: var(--warm); }
 
+/* 다차원 판정 축(record_verdict — LLM이 케이스마다 생성) */
+.verdict-axes { padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 9px; }
+.vax { display: flex; gap: 10px; align-items: flex-start; }
+.vax .vax-s { font-size: 11px; font-weight: 800; color: #fff; padding: 3px 8px; border-radius: 7px; flex-shrink: 0; min-width: 46px; text-align: center; margin-top: 1px; letter-spacing: 0.02em; }
+.vax.ok .vax-s { background: var(--success); }
+.vax.mid .vax-s { background: var(--warm); }
+.vax.no .vax-s { background: #d64545; }
+.vax .vax-b { min-width: 0; }
+.vax .vax-d { font-size: 14.5px; font-weight: 700; letter-spacing: -0.01em; color: var(--fg-1); }
+.vax .vax-r { font-size: 13px; color: var(--fg-2); line-height: 1.5; margin-top: 2px; }
+
 /* 다음 할 일 */
 .next-list { margin: 0; padding: 6px 20px 16px 42px; display: flex; flex-direction: column; gap: 7px; }
 .next-list li { font-size: 14.5px; color: var(--fg-1); line-height: 1.5; }
