@@ -1169,7 +1169,12 @@ async function freeReply(text) {
   }
   // 재진단 명령(이미 용도 있을 때) → 같은 용도로 다시
   if (c.use_type && /다시|재진단|새로|재검토|다시\s*해/.test(text)) { rediagnose(); return; }
-  // 진단 완료 후 입력 = 후속질문 → 같은 thread로(에이전트가 컨텍스트 갖고 답하거나 재진단 판단). 새 진단 아님
+  // 결과 후 '(다른) X 지을 수 있을까/지어도 되나' = 새 용도 진단(기존 trace·결과 비우고 처음부터, 용도는 에이전트가 텍스트서 해석).
+  //  followup으로 가면 옛 사고과정 남고 카드가 옛 용도 서류+새 verdict로 섞임 → 새 진단으로 분리.
+  if (c.threadId && c.result && /지을\s*수\s*있|지어도\s*(되|괜찮)|세울\s*수\s*있|올려도\s*(되|괜찮)|건축\s*가능|짓고\s*싶|지어도\s*돼/.test(text)) {
+    chooseUse(text, text, true); return;
+  }
+  // 진단 완료 후 입력 = 후속질문 → 같은 thread로(에이전트가 컨텍스트 갖고 답). 새 진단 아님
   if (c.threadId && c.result) {
     runDiagnoseStream("/diagnose/followup?" + new URLSearchParams({ thread_id: c.threadId, message: text }).toString(), true);
     return;
