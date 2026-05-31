@@ -15,7 +15,9 @@ def _q(s, n=110):
 def _li(x):
     """리스트 항목 표시값 — dict면 raw repr 대신 사람이 읽는 label/name/key만(트레이스 정리)."""
     if isinstance(x, dict):
-        return str(x.get("label") or x.get("name") or x.get("key") or x.get("title") or "항목")
+        return str(x.get("permit_name") or x.get("stage_key") or x.get("reg_name") or x.get("doc_name")
+                   or x.get("dimension") or x.get("term") or x.get("ho")
+                   or x.get("label") or x.get("name") or x.get("key") or x.get("title") or "항목")
     return str(x)
 
 

@@ -24,6 +24,21 @@ REG_LAW = [
  ("상업지역",       "국토의 계획 및 이용에 관한 법률", "76"),
 ]
 
+# 라우팅 힌트 — 검색 '시작점'일 뿐 '판정 근거' 아님. 흔한 중첩규제가 어느 법/후보조문을 먼저 볼지만 알려준다.
+# 코드는 효과·제한·가부를 절대 확정 안 함: status 항상 '확인필요'로 두고, 후보조문(복수)·note만 surface해 LLM/사람이 원문·결정도서·조례로 확인.
+REG_SEED = [
+ {"kw": "지구단위계획",    "law": "국토의 계획 및 이용에 관한 법률", "articles": ["52", "54"], "note": "개별 지구단위계획 결정도서·시행지침·조례 확인 필요"},
+ {"kw": "정비구역",        "law": "도시 및 주거환경정비법",          "articles": ["19"],       "note": "정비계획·사업시행계획상 행위제한 확인 필요"},
+ {"kw": "재정비촉진",      "law": "도시재정비 촉진을 위한 특별법",   "articles": ["31"],       "note": "촉진계획상 제한 확인 필요"},
+ {"kw": "과밀억제",        "law": "수도권정비계획법",                "articles": ["7"],        "note": "권역 행위제한·예외 확인 필요"},
+ {"kw": "자연보전권역",    "law": "수도권정비계획법",                "articles": ["9"],        "note": "권역 행위제한·예외 확인 필요"},
+ {"kw": "성장관리권역",    "law": "수도권정비계획법",                "articles": ["8"],        "note": "권역 행위제한·예외 확인 필요"},
+ {"kw": "가로구역",        "law": "건축법",                          "articles": ["60"],       "note": "가로구역별 최고높이 고시·조례 확인 필요"},
+ {"kw": "최고높이",        "law": "건축법",                          "articles": ["60"],       "note": "최고높이 고시·조례 확인 필요"},
+ {"kw": "건축선",          "law": "건축법",                          "articles": ["46", "47"], "note": "건축선 지정·건축 제한 확인 필요"},
+ {"kw": "수질보전특별대책", "law": "환경정책기본법",                 "articles": ["38"],       "note": "특별대책지역 고시상 행위제한 확인 필요"},
+]
+
 def _AL(v): return v if isinstance(v, list) else ([] if v is None else [v])
 def _S(v):
     if v is None: return ''
@@ -64,7 +79,12 @@ def resolve(reg_names, maxlen=200):
         if not nm: continue
         hit = next((t for t in REG_LAW if t[0] in nm), None)
         if not hit:
-            results.append({"규제": nm, "상태": "확인필요", "근거": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요"})
+            sd = next((s for s in REG_SEED if s["kw"] in nm), None)
+            if sd:   # 라우팅 힌트만 — 검색 시작점 제시, 효과는 코드가 확정 안 함(확인필요 유지)
+                results.append({"규제": nm, "상태": "확인필요", "법령": sd["law"], "후보조문": sd["articles"],
+                                "근거": f"검색 시작점: {sd['law']} 제{'·'.join(sd['articles'])}조 — {sd['note']}(효과는 원문·결정도서·조례로 확인)"})
+            else:
+                results.append({"규제": nm, "상태": "확인필요", "근거": "관련 법령 미상 — 규제명으로 직접 확인 필요"})
             continue
         _, lawnm, jo = hit
         if (lawnm, jo) in seen:  # 같은 조문 중복 규제(녹지/도시 등) 1회만

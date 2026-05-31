@@ -202,8 +202,12 @@ def build_reasoning(state):
             verdict = "확인필요"
             out.setdefault("abstentions", []).append({"node": "build_reasoning",
                 "사유": "맹지(도로 미접) — 신축은 건축법§44 접도의무가 선결. 도로지정·사도개설(§45/사도법) 가능성 미검토 → 사람검토 필요"})
-    out["legal_reasoning"] = {"steps": steps, "verdict": verdict,
-            "verdict_basis_seq": [s["seq"] for s in steps if s["kind"] in ("행위제한", "조례호목해소")]}
+    # 근거 seq = 판정 방향에 맞는 단계만(검수 #5): 긍정이면 '가능' 단계, 확인필요/금지면 '막은/불확실' 단계
+    if verdict in ("가능", "가능(조건부)", "조건부"):
+        _basis = [s["seq"] for s in steps if s["kind"] in ("행위제한", "조례호목해소") and s.get("status") != "확인필요"]
+    else:
+        _basis = [s["seq"] for s in steps if s.get("status") == "확인필요" and s["kind"] in ("행위제한", "조례호목해소")]
+    out["legal_reasoning"] = {"steps": steps, "verdict": verdict, "verdict_basis_seq": _basis}
     out["verdict"] = verdict
     return out
 

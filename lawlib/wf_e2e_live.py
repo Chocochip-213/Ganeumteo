@@ -24,11 +24,17 @@ def get(url,p,tries=5,euckr=False):
         except Exception: time.sleep(1.2*(i+1))
     return ""
 def geo(a,t):
-    r=get("https://api.vworld.kr/req/address",{"service":"address","request":"getcoord","version":"2.0","crs":"epsg:4326","address":a,"type":t,"format":"json","key":VW})
-    try:
-        j=json.loads(r)
-        if j["response"]["status"]=="OK": p=j["response"]["result"]["point"]; return float(p["x"]),float(p["y"])
-    except: return None
+    cands=[a]; s=str(a or "")
+    if "산" in s:   # 산번지 표기 변형(산100/산 100/산-100) — 지오코더 스냅 실패 대비 재시도
+        for v in (re.sub(r"산\s*(\d)",r"산 \1",s), re.sub(r"산\s*(\d)",r"산-\1",s), re.sub(r"산\s*(\d)",r"산\1",s)):
+            if v not in cands: cands.append(v)
+    for addr in cands:
+        r=get("https://api.vworld.kr/req/address",{"service":"address","request":"getcoord","version":"2.0","crs":"epsg:4326","address":addr,"type":t,"format":"json","key":VW})
+        try:
+            j=json.loads(r)
+            if j["response"]["status"]=="OK": p=j["response"]["result"]["point"]; return float(p["x"]),float(p["y"])
+        except: pass
+    return None
 def parcel(x,y):
     r=get("https://api.vworld.kr/req/data",{"service":"data","request":"GetFeature","version":"2.0","data":"LP_PA_CBND_BUBUN","format":"json","crs":"EPSG:4326","geometry":"false","size":1,"geomFilter":f"POINT({x} {y})","key":VW,"domain":DOM})
     try: return json.loads(r)["response"]["result"]["featureCollection"]["features"][0]["properties"]
