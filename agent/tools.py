@@ -591,7 +591,7 @@ def request_human_input(question: str, fields: list, tool_call_id: Annotated[str
         return Command(update={"terminal_reason": "aborted", "_toolcalls": ["request_human_input"],
                                "messages": [_tm("사용자 중단", tool_call_id)]})
     upd = {"_toolcalls": ["request_human_input"], "messages": [_tm(f"사용자 입력: {ans}", tool_call_id)]}
-    for k in ("floor_area", "floor_count", "use_type"):   # 알려진 상태필드만 충전(숫자는 형변환). 그 외 임의 응답은 위 메시지로 LLM이 읽음
+    for k in ("floor_area", "floor_count", "use_type"):   # 알려진 스칼라 상태필드(숫자는 형변환)
         if isinstance(ans, dict) and k in ans and ans[k] not in (None, ""):
             v = ans[k]
             if k in ("floor_area", "floor_count"):
@@ -600,6 +600,12 @@ def request_human_input(question: str, fields: list, tool_call_id: Annotated[str
                 except (TypeError, ValueError):
                     continue
             upd[k] = v
+    # 권원·공동소유·사전결정·분할납부 등 '서류 판단용' 답을 document_facts로 구조화 durable 저장(검수 #2: 전엔 floor/use만 저장돼 사라졌음).
+    #  키 = 에이전트가 물은 field명(구조화 응답) 또는 'answer'(자유텍스트). assess_conditional_docs·verdict가 참조, 카드 '확인된 사실' 노출.
+    facts = {str(k): str(v)[:200] for k, v in (ans.items() if isinstance(ans, dict) else [])
+             if k not in ("floor_area", "floor_count", "use_type", "type") and v not in (None, "")}
+    if facts:
+        upd["document_facts"] = facts
     return Command(update=upd)
 
 

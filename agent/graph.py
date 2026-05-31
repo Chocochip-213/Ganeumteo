@@ -236,6 +236,7 @@ def compose(state):
     card = {
         "verdict": state.get("verdict"),
         "verdict_labels": state.get("verdict_labels", []),   # 다차원 판정 축(LLM이 케이스마다 정함) — 종합 verdict 옆에 투명 표시
+        "document_facts": state.get("document_facts", {}),   # 사용자가 확인해준 서류판단 사실(권원·사전결정 등) — '확인된 사실' 노출
         "legal_reasoning": state.get("legal_reasoning"),
         "uijae": state.get("uijae"),
         "documents": [{"stage": d["stage_key"], "count": d.get("count", 0), "status": d["status"],

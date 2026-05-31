@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field
 from langgraph.graph.message import add_messages
 
 
+def _merge_facts(a, b):   # document_facts 누적 병합(여러 HITL 라운드 답을 합침)
+    return {**(a or {}), **(b or {})}
+
+
 class Citation(BaseModel):
     source: str                       # vworld | law | ordin | data
     law_name: Optional[str] = None
@@ -125,6 +129,7 @@ class GaneomteoState(TypedDict):
     doc_index_hit: NotRequired[bool]   # 조례 RAG 인덱스 HIT 여부(가늠터 UI 트레이스 노출)
     verdict: NotRequired[str]
     _llm_verdict: NotRequired[str]                     # record_verdict가 LLM 합성으로 커밋한 최종판정(build_reasoning이 _derive_verdict 대신 사용; 없으면 fallback)
+    document_facts: Annotated[dict, _merge_facts]      # 사용자가 확인해준 서류판단 사실(권원·공동소유·사전결정·분할납부 등) — request_human_input이 durable 저장, 카드 노출
     # ── 산출 (누적=operator.add)
     uijae: Annotated[list, operator.add]
     documents: Annotated[list, operator.add]
