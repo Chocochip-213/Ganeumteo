@@ -1095,14 +1095,12 @@ function docStageCard(d, num, isUijae) {
     return `<div class="ds-doc${ap === "no" ? " ds-doc-off" : ""}"><span class="dchk">${I.check}</span><span class="dtxt">${esc(name) || "(서류명 없음)"}${apBadge}${areason}</span>${prepHint(h)}</div>${mokHtml}`;
   };
 
-  // 에이전트 판정 반영: 제출(필수 + 해당yes) / 확인필요(unknown) / 해당없음(no=제출 불요)
+  // 에이전트 판정(제출/확인필요/해당없음) — 카운트용. 렌더는 법정 호 순서 그대로(버킷 재정렬 안 함 — 검수 #3): 상태는 각 호 배지로.
   const _ap = (g) => (g.head && g.head.conditional) ? (g.head.applies || "unknown") : "must";
   const submit = groups.filter((g) => _ap(g) === "must" || _ap(g) === "yes");
   const check = groups.filter((g) => _ap(g) === "unknown");
   const off = groups.filter((g) => _ap(g) === "no");
-  const submitHtml = submit.map(groupHtml).join("");
-  const checkHtml = check.map(groupHtml).join("");
-  const offHtml = off.map(groupHtml).join("");
+  const orderedHtml = groups.map(groupHtml).join("");   // 신청서 → 첨부 호 → 의 → 목, 법정 순서 보존
 
   // 주신청서 양식 = 이 단계에서 직접 받아 작성하는 핵심 서식 → 최상단 강조 다운로드
   const applyHtml = (ok && (d.apply_hwp || d.apply_pdf))
@@ -1111,7 +1109,9 @@ function docStageCard(d, num, isUijae) {
   // 링크: 시행규칙 원문(law.go.kr) + 제출처 포털
   const lawLink = law ? `<a class="ds-link" href="${esc(lawURL(law))}" target="_blank" rel="noreferrer">${I.ext} 시행규칙 원문</a>` : "";
   const [where, purl] = submitPortal(stage);
-  const submitLink = `<a class="ds-link" href="${esc(purl)}" target="_blank" rel="noreferrer">${I.pin} ${esc(where)} 제출</a>`;
+  const submitLink = isUijae   // 의제는 별도 민원이 아니라 건축허가 신청에 첨부(의제처리 — 검수 #6)
+    ? `<span class="ds-link ds-link-note">${I.info} 건축허가 신청에 함께 첨부(별도 민원 아님)</span>`
+    : `<a class="ds-link" href="${esc(purl)}" target="_blank" rel="noreferrer">${I.pin} ${esc(where)} 제출</a>`;
 
   // 부제: 제출 N · 확인필요 M · 해당없음 K — 에이전트 판정 반영
   const lawLine = [law, article].filter(Boolean).join(" ");
@@ -1146,9 +1146,7 @@ function docStageCard(d, num, isUijae) {
     ${whenHtml}
     ${authorHtml}
     ${applyHtml ? `<div class="ds-apply-wrap">${applyHtml}</div>` : ""}
-    ${ok && submitHtml ? `<div class="ds-items">${submitHtml}</div>` : ""}
-    ${ok && checkHtml ? `<details class="ds-cond" open><summary>${I.cond}직접 확인 필요 · ${check.length}건</summary><div class="ds-items">${checkHtml}</div></details>` : ""}
-    ${ok && offHtml ? `<details class="ds-cond ds-cond-off"><summary>${I.cond}해당 없음 · 제출 불요 · ${off.length}건</summary><div class="ds-items">${offHtml}</div></details>` : ""}
+    ${ok && orderedHtml ? `<div class="ds-items">${orderedHtml}</div>` : ""}
     ${!ok ? `<div class="ds-na-note">${I.bang}<span>이 단계 서류는 자동 조회가 되지 않았어요. 발급처(${esc(where)})에서 직접 확인하세요. <b>서류가 없다는 뜻은 아니에요.</b></span></div>` : ""}
     <div class="ds-links">${lawLink}${submitLink}</div>
   </div>`;
