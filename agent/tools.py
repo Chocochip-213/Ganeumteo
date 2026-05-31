@@ -459,6 +459,18 @@ def compute_envelope(land_area_m2: float, bcr_pct: float, far_pct: float,
 
 
 @tool
+def normalize_area(value: float, unit: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+    """면적 단위 환산(결정적 — LLM 암산 금지). value를 ㎡로 변환해 돌려준다.
+    unit이 '평'이면 ×3.3058(법정 계량환산 400/121㎡), '㎡'/'m2'면 그대로. 반환: ㎡값 + 'N㎡(약 M평)' 표시문.
+    사용자가 면적을 평으로 답하거나(예 '30평') 표시용 평수가 필요할 때 이걸 써라(직접 곱하지 말 것). 반환된 ㎡값을 compute_scale/compute_envelope/parking_quota 등에 그대로 넘겨라."""
+    u = (unit or "").strip().lower()
+    m2 = round(value * 3.3058, 2) if u in ("평", "py", "pyeong") else round(float(value), 2)
+    pyeong = round(m2 / 3.3058, 1)
+    return Command(update={"_toolcalls": ["normalize_area"],
+                           "messages": [_tm(f"면적 환산: {value}{unit} → {m2}㎡(약 {pyeong}평)", tool_call_id)]})
+
+
+@tool
 def parking_quota(use_type: str, floor_area: float, base_area_m2: float,
                   tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """부설주차장 소요대수(법 산식만, 결정적). 소요대수 = ceil_05(시설면적 ÷ 용도별 기준면적). 비고6: 산정 0.5이상→올림 1대.
@@ -694,7 +706,7 @@ def get_building_floors(pnu: str, tool_call_id: Annotated[str, InjectedToolCallI
 
 TOOLS = [geocode, get_parcel, get_building_register, get_building_floors, get_land_use, get_land_price, act_landuse,
          ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
-         compute_envelope, parking_quota, levy_estimate,
+         compute_envelope, normalize_area, parking_quota, levy_estimate,
          author_rule_tool, reg_effect_resolve_tool, record_uijae, record_ordinance_ruling, record_verdict,
          request_human_input]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}
