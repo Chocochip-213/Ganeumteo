@@ -637,7 +637,26 @@ def record_verdict(final_verdict: Annotated[Literal["가능", "가능(조건부)
                            "messages": [_tm(f"종합판정 기록: {final_verdict} (축 {len(labels)}개)", tool_call_id)]})
 
 
-TOOLS = [geocode, get_parcel, get_land_use, get_land_price, act_landuse,
+@tool
+def get_building_register(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+    """필지(PNU)에 '기존 건물'이 등록돼 있는지 건축물대장으로 확인 → work_type 자동판별. 사용자에게 '빈땅인지/기존건물인지' 묻기 전에 이걸로 먼저 조회하라.
+    건물있음=용도변경/대수선 대상(주용도·연면적·층수 반환) · 없음=빈땅 신축 · 조회불가=건축HUB API 활용신청 필요(이땐 빈땅 단정 말고 '미확인'으로 정직하게)."""
+    r = W.building_register(pnu)
+    b = r.get("건물있음")
+    if b is True:
+        msg = f"기존 건물 있음 — 주용도 {r.get('주용도')}, 연면적 {r.get('연면적')}㎡, 지상 {r.get('지상층수')}층, 동수 {r.get('동수')} → 신축 아님(용도변경/대수선 가능성). 빈땅으로 단정 금지."
+        fact = f"기존 건물 있음({r.get('주용도')})"
+    elif b is False:
+        msg = f"등록 건축물 없음(빈땅 가능) → 신축 쪽. {r.get('사유','')}"
+        fact = "등록 건물 없음(빈땅 가능)"
+    else:
+        msg = f"건물 존재 여부 미확인 — {r.get('사유','')}. **빈땅으로 단정하지 말 것**(사용자에게 확인하거나 '미확인'으로)."
+        fact = "기존 건물 존재 미확인"
+    return Command(update={"document_facts": {"기존건물": fact}, "_toolcalls": ["get_building_register"],
+                           "messages": [_tm(msg, tool_call_id)]})
+
+
+TOOLS = [geocode, get_parcel, get_building_register, get_land_use, get_land_price, act_landuse,
          ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
          compute_envelope, parking_quota, levy_estimate,
          author_rule_tool, reg_effect_resolve_tool, record_uijae, record_ordinance_ruling, record_verdict,

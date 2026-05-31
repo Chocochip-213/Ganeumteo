@@ -51,6 +51,23 @@ def act_detail(uc,nm,ac):
         if reg: out.append({"reg":reg,"ref_law":g("LU_REF_LAW_NM1"),"node":g("NODE_DESC")})
     return out
 
+def building_register(pnu):
+    """건축물대장 표제부(건축HUB getBrTitleInfo) — 필지에 '기존 건물'이 있나(=신축 vs 용도변경 자동판별). PNU에서 시군구/법정동/본번/부번 분해.
+    반환: 건물있음=True(주용도·연면적·층수·동수) / False(빈땅 가능) / None(조회불가 — 건축HUB 활용신청 필요). 빈 응답을 '빈땅 확정'으로 단정하지 않음."""
+    s=str(pnu or "")
+    if len(s)<19: return {"건물있음":None,"사유":"PNU 없음"}
+    plat="1" if s[10]=="2" else "0"   # PNU 필지구분 2=산→platGbCd 1, else 0(대지)
+    r=get("http://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo",
+          {"serviceKey":DK,"sigunguCd":s[:5],"bjdongCd":s[5:10],"platGbCd":plat,"bun":s[11:15],"ji":s[15:19],"numOfRows":50,"pageNo":1})
+    if not r:   # 200/0바이트 = 건축HUB 미활용신청 → 조회불가(빈땅 단정 금지)
+        return {"건물있음":None,"사유":"건축물대장 조회불가(건축HUB API 활용신청 필요 — data.go.kr/15134735)"}
+    code=(re.findall(r"<resultCode>(.*?)</resultCode>",r) or [""])[0]
+    items=re.findall(r"<item>(.*?)</item>",r,re.S)
+    if not items:
+        return {"건물있음":False,"사유":f"등록된 건축물 없음(빈땅 가능) code={code}"}
+    g=lambda k:(re.findall(rf"<{k}>(.*?)</{k}>",r) or [""])[0].strip()
+    return {"건물있음":True,"동수":len(items),"주용도":g("mainPurpsCdNm"),"연면적":g("totArea"),"지상층수":g("grndFlrCnt"),"건물명":g("bldNm")}
+
 def _S(v):
     if v is None:return ''
     if isinstance(v,list):return ' '.join(_S(x) for x in v)
