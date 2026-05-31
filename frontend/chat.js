@@ -1075,28 +1075,9 @@ function orderedDocs(card) {
   return docs.map((d, i) => [d, i]).sort((a, b) => (rank(a[0]) - rank(b[0])) || (a[1] - b[1])).map((x) => x[0]);
 }
 
-function docCards(card) {
-  const docs = orderedDocs(card);
-  if (!docs.length) return `<div class="card card-pad"><div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 제출 서류</span></div><p style="font-size:14px;color:var(--fg-3);margin:6px 0 0">서류 단계가 산출되지 않았어요. 관할 기관(해당 시·군·구청 건축과)에 직접 문의가 필요해요.</p></div>`;
-  const uijaeKeys = new Set(arr(card.uijae).map((u) => u && u.stage_key).filter(Boolean));
-  const uijaeNames = arr(card.uijae).map((u) => u && u.permit_name).filter(Boolean);
-  // 의제(농지전용 등)는 건축허가에 함께 처리(건축법 §11⑤) — 순번 안 매기고, 본 단계(건축허가·착공·사용승인)만 1·2·3.
-  let n = 0;
-  return docs.map((d) => {
-    const u = uijaeKeys.has(String(d.stage || d.stage_key || ""));
-    return docStageCard(d, u ? 0 : ++n, u, uijaeNames);
-  }).join("");
-}
-
-function docStageCard(d, num, isUijae, uijaeNames) {
-  const stage = d.stage || d.stage_key || "단계";
-  const ok = d.status === "전수확보";
-  const law = d.law || "", article = d.article || "";
-  // item_type(백엔드 법령구조 도출): group(각 목 헤더)·doc(제출 peer)·spec(세부)·cross_ref(관계법령=의제 위임). 1패스 렌더는 helpers 정의 후.
-  const items = arr(d.items);
-  const uNames = arr(uijaeNames);
-
-  // 서류별: 별지 서식 있으면 양식 다운로드(HWP/PDF), 없으면 '직접 준비' 배지. 둘 다 hover로 준비법 설명.
+// 한 단계의 첨부서류 items를 item_type(group/doc/spec/cross_ref) 기반으로 렌더 — 주 단계·embed 의제 공용.
+// cross_ref는 에이전트 조건부 판정(applies)+assess_reason(멀티홉 해소)을 그대로 태운다(코드가 의제 맵 안 만듦=무하드코딩).
+function renderDocItems(items, law, article) {
   const prepHint = (it) => {
     const proviso = it.has_proviso ? " (단서·예외 조건 있음 — 원문 확인)" : "";
     if (it.form_hwp || it.form_pdf) {
@@ -1124,31 +1105,36 @@ function docStageCard(d, num, isUijae, uijaeNames) {
     if (ap === "unknown") return `<span class="ds-wait">${I.cond}<em>해당 여부 확인 후 준비</em></span>`;
     return prepHint(it);
   };
-  // 1패스: item_type + 그룹 상속으로 각 행 역할·applies 계산(법정 호 순서 보존 — 재정렬 안 함, 검수 #3)
-  let curGroupAp = null;   // 직전 그룹 헤더 applies(자식 목-doc가 상속); null=그룹 문맥 없음
-  const rows = items.map((it) => {
+  let curGroupAp = null;   // 직전 그룹 헤더 applies(자식 목-doc 상속); null=그룹 문맥 없음
+  const rows = arr(items).map((it) => {
     const t = it.item_type || "doc";
+    if (t === "application") return { kind: "application", it, ap: "must" };   // 신청서 양식 = 제출묶음의 동등 row(메인/부속 구분 아님)
     if (t === "group") { curGroupAp = apOf(it, "must"); return { kind: "group", it, ap: curGroupAp }; }
-    if (t === "cross_ref") { if (!isMok(it.ho)) curGroupAp = null; return { kind: "xref", it }; }   // 목인 cross_ref는 형제 목의 그룹 상속 안 깸
+    if (t === "cross_ref") { const cap = apOf(it, isMok(it.ho) && curGroupAp ? curGroupAp : "must"); if (!isMok(it.ho)) curGroupAp = null; return { kind: "xref", it, ap: cap }; }
     if (t === "spec") { return { kind: "spec", it }; }
     const child = isMok(it.ho);
     const ap = apOf(it, child && curGroupAp ? curGroupAp : "must");
-    if (!child) curGroupAp = null;   // 최상위 doc은 그룹 문맥 종료
+    if (!child) curGroupAp = null;
     return { kind: "doc", it, ap, child };
   });
-  // 카운트 = 실제 제출 doc만(group/spec/cross_ref 제외)
-  const submit = rows.filter((r) => r.kind === "doc" && (r.ap === "must" || r.ap === "yes"));
+  const submit = rows.filter((r) => (r.kind === "doc" || r.kind === "application") && (r.ap === "must" || r.ap === "yes"));
   const check = rows.filter((r) => r.kind === "doc" && r.ap === "unknown");
   const off = rows.filter((r) => r.kind === "doc" && r.ap === "no");
-  const xref = rows.filter((r) => r.kind === "xref");
+  const xref = rows.filter((r) => r.kind === "xref" && r.ap !== "no");
   const rowHtml = (r) => {
     const nm = String(r.it.doc_name || "").trim();
+    if (r.kind === "application") {
+      return `<div class="ds-doc ds-doc-apply">${rowIcon("must")}<span class="dtxt">${nm ? linkifyTerms(nm) : "신청서"}<span class="ds-app-tag">신청서</span></span>${prepHint(r.it)}</div>`;
+    }
     if (r.kind === "group") {
       return `<div class="ds-doc ds-group">${rowIcon(r.ap)}<span class="dtxt">${nm ? linkifyTerms(nm) : "(다음 각 목)"}${apBadge(r.ap)}<span class="ds-group-tag">아래 해당 서류</span></span></div>`;
     }
-    if (r.kind === "xref") {
-      const tgt = uNames.length ? ("관계 의제(" + uNames.map(esc).join("·") + ") 있으면 그 단계 서류로 제출") : "관계 의제 있으면 그 단계 서류로 제출(없으면 해당없음)";
-      return `<div class="ds-doc ds-xref"><span class="dchk dchk-u">${I.info}</span><span class="dtxt">${nm ? linkifyTerms(nm) : "관계 법령 제출서류"}<span class="ds-xref-to">→ ${tgt}</span></span></div>`;
+    if (r.kind === "xref") {   // cross_ref = 관계법령(의제) 위임 — 법조문 텍스트 라벨 대신 명확 라벨 + 해소근거(assess_reason) + 아래 구체 의제서류로(법조문 원문은 hover)
+      const areason = r.it.assess_reason ? `<div class="ds-areason">${linkifyTerms(String(r.it.assess_reason))}</div>` : "";
+      const hint = r.ap === "no" ? `<span class="ds-off-note">제출 불요</span>`
+        : r.ap === "unknown" ? `<span class="ds-wait">${I.cond}<em>해당 여부 확인 후</em></span>`
+        : `<span class="ds-xref-to">아래 "함께 첨부 의제 서류"로 제출</span>`;
+      return `<div class="ds-doc ds-xref${r.ap === "no" ? " ds-doc-off" : ""}"${nm ? ` title="${esc(nm)}"` : ""}>${rowIcon(r.ap)}<span class="dtxt">관계 인허가(의제)에서 요구하는 제출서류${apBadge(r.ap)}${areason}</span>${hint}</div>`;
     }
     if (r.kind === "spec") {
       return `<div class="ds-mok"><span class="mbar"></span><span class="dtxt">${nm ? linkifyTerms(nm) : ""}</span></div>`;
@@ -1156,11 +1142,49 @@ function docStageCard(d, num, isUijae, uijaeNames) {
     const areason = (r.it.conditional && r.it.assess_reason) ? `<div class="ds-areason">${linkifyTerms(String(r.it.assess_reason))}</div>` : "";
     return `<div class="ds-doc${r.ap === "no" ? " ds-doc-off" : ""}${r.child ? " ds-doc-peer" : ""}">${rowIcon(r.ap)}<span class="dtxt">${nm ? linkifyTerms(nm) : "(서류명 없음)"}${apBadge(r.ap)}${areason}</span>${prepFor(r.it, r.ap)}</div>`;
   };
-  const orderedHtml = rows.map(rowHtml).join("");
+  return { html: rows.map(rowHtml).join(""), submit, check, off, xref };
+}
 
-  // 주신청서 양식 = 이 단계에서 직접 받아 작성하는 핵심 서식 → 최상단 강조 다운로드
-  const applyHtml = (ok && (d.apply_hwp || d.apply_pdf))
-    ? `<div class="ds-apply">${I.down}<span class="ds-apply-t">${esc(d.apply_title || "신청서")} 양식</span><span class="ds-apply-dl">${d.apply_hwp ? `<a href="${esc(d.apply_hwp)}" target="_blank" rel="noreferrer">HWP</a>` : ""}${d.apply_pdf ? `<a href="${esc(d.apply_pdf)}" target="_blank" rel="noreferrer">PDF</a>` : ""}</span></div>` : "";
+// 단계의 신청서 양식(apply_*)을 제출목록 첫 행(item_type=application)으로 — 별도 강조박스 아님, 동등 row.
+function _stageItems(d) {
+  const app = (d.apply_hwp || d.apply_pdf || d.apply_title)
+    ? [{ ho: "", doc_name: d.apply_title || "신청서", item_type: "application", form_hwp: d.apply_hwp || "", form_pdf: d.apply_pdf || "", conditional: false }]
+    : [];
+  return app.concat(arr(d.items));
+}
+
+function docCards(card) {
+  const docs = orderedDocs(card);
+  if (!docs.length) return `<div class="card card-pad"><div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 제출 서류</span></div><p style="font-size:14px;color:var(--fg-3);margin:6px 0 0">서류 단계가 산출되지 않았어요. 관할 기관(해당 시·군·구청 건축과)에 직접 문의가 필요해요.</p></div>`;
+  const uijaeKeys = new Set(arr(card.uijae).map((u) => u && u.stage_key).filter(Boolean));
+  // 의제(농지전용 등)는 별도 카드가 아니라 주 허가단계(건축허가/용도변경) 카드 안 "함께 첨부" 섹션으로 병합(건축법 §11⑤).
+  const mains = docs.filter((d) => !uijaeKeys.has(String(d.stage || d.stage_key || "")));
+  const uijaes = docs.filter((d) => uijaeKeys.has(String(d.stage || d.stage_key || "")));
+  let n = 0;
+  if (!mains.length) return uijaes.map((d) => docStageCard(d, ++n, false, [])).join("");   // 주 단계 없이 의제만 있는 비정상 케이스 — 의제 누락 방지(검수 S2)
+  return mains.map((d, i) => docStageCard(d, ++n, false, i === 0 ? uijaes : [])).join("");
+}
+
+function docStageCard(d, num, isUijae, embedUijae) {
+  const stage = d.stage || d.stage_key || "단계";
+  const ok = d.status === "전수확보";
+  const law = d.law || "", article = d.article || "";
+  // item_type 기반 렌더(application/group/doc/spec/cross_ref) — renderDocItems 공용. 신청서 양식도 제출목록 동등 row(메인/부속 구분 제거).
+  const R = renderDocItems(_stageItems(d), law, article);
+  const orderedHtml = R.html;
+  const submit = R.submit, check = R.check, off = R.off, xref = R.xref;
+
+  // 의제 서류 = 별도 카드 아니라 이 주 단계 카드 안 "함께 첨부" 섹션으로 병합(건축법 §11⑤ — 의제는 건축허가에 함께 처리)
+  const emb = arr(embedUijae).filter((u) => u && (u.stage || u.stage_key));   // 확인필요 의제도 누락 없이 — 자동조회 실패 신호 보존(검수 S1)
+  const embedHtml = emb.length ? `<div class="ds-uijae-wrap"><div class="ds-uijae-head">${I.info} 건축허가 접수 시 <b>함께 첨부</b>되는 의제 서류 <span class="ds-uijae-sub">건축법 §11⑤ · 별도 민원 아님</span></div>${emb.map((u) => {
+    const ust = u.stage || u.stage_key || "의제";
+    if (u.status !== "전수확보") {
+      return `<div class="ds-uijae"><div class="ds-uijae-t"><span class="ds-uijae-name">${esc(ust)}</span><span class="ds-uijae-law">자동 조회 안 됨 — 발급처에서 직접 확인(서류 없다는 뜻 아님)</span></div></div>`;
+    }
+    const ur = renderDocItems(_stageItems(u), u.law || "", u.article || "");
+    const ulaw = [u.law, u.article].filter(Boolean).join(" ");
+    return `<div class="ds-uijae"><div class="ds-uijae-t"><span class="ds-uijae-name">${esc(ust)}</span><span class="ds-uijae-law">${esc(ulaw)}${ulaw ? " · " : ""}제출 ${ur.submit.length}건${ur.check.length ? ` · 확인필요 ${ur.check.length}건` : ""}</span></div><div class="ds-items ds-items-u">${ur.html}</div></div>`;
+  }).join("")}</div>` : "";
 
   // 링크: 시행규칙 원문(law.go.kr) + 제출처 포털
   const lawLink = law ? `<a class="ds-link" href="${esc(lawURL(law))}" target="_blank" rel="noreferrer">${I.ext} 시행규칙 원문</a>` : "";
@@ -1201,8 +1225,8 @@ function docStageCard(d, num, isUijae, uijaeNames) {
     </div>
     ${whenHtml}
     ${authorHtml}
-    ${applyHtml ? `<div class="ds-apply-wrap">${applyHtml}</div>` : ""}
     ${ok && orderedHtml ? `<div class="ds-items">${orderedHtml}</div>` : ""}
+    ${embedHtml}
     ${!ok ? `<div class="ds-na-note">${I.bang}<span>이 단계 서류는 자동 조회가 되지 않았어요. 발급처(${esc(where)})에서 직접 확인하세요. <b>서류가 없다는 뜻은 아니에요.</b></span></div>` : ""}
     <div class="ds-links">${lawLink}${submitLink}</div>
   </div>`;
