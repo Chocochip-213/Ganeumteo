@@ -72,6 +72,8 @@ class VerdictLabel(BaseModel):
     status: Literal["충족", "주의", "확인필요", "불가"] = "주의"   # 축 판정(표시·일관성 가드 어휘)
     reason: str = ""                                  # 평이한 한 줄 사유
     basis_seq: List[int] = Field(default_factory=list)   # 근거 citation/step seq
+    blocking_level: Literal["none", "critical"] = "none"   # 이 축이 핵심(미충족이면 진행 불가)인지 — LLM-set, record_verdict 게이트가 읽음
+    unresolved_by: Literal["none", "agent", "authority", "user"] = "none"   # 미해소면 누가 푸나(agent=더조사·authority=관할심의·user=사실확인) — LLM-set
 
 
 class RegEffect(BaseModel):
@@ -145,6 +147,7 @@ class GaneomteoState(TypedDict):
     reg_effects: Annotated[list, operator.add]
     jorye_verdicts: Annotated[list, operator.add]
     verdict_labels: Annotated[list, operator.add]     # record_verdict 다차원 판정 축(축 이름·개수는 LLM이 케이스마다 정함 — 코드 고정목록 없음)
+    _verdict_round: NotRequired[list]                 # 최신 record_verdict 라운드 라벨만(last-write-wins) — 카드는 이걸 써 다라운드 stale 축 제거(U3)
     author: NotRequired[dict]
     term_notes: NotRequired[dict]            # 진단맥락 용어설명(에이전트가 state 사실로 생성) — 프론트 popover(when_note 패턴)
     scale_limits: NotRequired[dict]          # compute_scale 전용(에너지/구조안전 — 실 연면적 기준)

@@ -267,7 +267,9 @@ def compose(state):
         return out
     card = {
         "verdict": state.get("verdict"),
-        "verdict_labels": state.get("verdict_labels", []),   # 다차원 판정 축(LLM이 케이스마다 정함) — 종합 verdict 옆에 투명 표시
+        "verdict_labels": (state["_verdict_round"] if state.get("_verdict_round") is not None
+                           else state.get("verdict_labels", [])),   # 최신 record_verdict 라운드 라벨만(다라운드 stale 축 제거, U3). is not None=빈 dims 라운드도 그대로 0축(검수B: or면 빈[]가 stale fallback)
+
         "document_facts": state.get("document_facts", {}),   # 사용자가 확인해준 서류판단 사실(권원·사전결정 등) — '확인된 사실' 노출
         "legal_reasoning": state.get("legal_reasoning"),
         "uijae": state.get("uijae"),

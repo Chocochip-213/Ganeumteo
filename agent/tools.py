@@ -660,24 +660,37 @@ def record_verdict(final_verdict: Annotated[Literal["가능", "가능(조건부)
         tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """진단 최종판정을 LLM(너)이 합성해 커밋(코드 if/else 판정 대체). 이게 진단의 결론이다.
     dimensions = 이 케이스에서 실제로 가부를 가른 '판정 축'들을 **네가 정해** 나열(고정 목록 아님 — 케이스마다 다름):
-      [{dimension: 축 이름(예 '용도'·'접도'·'권원'·'조례'·'의제'·'영업신고' 등 이 사안에 맞게), status: '충족'|'주의'|'확인필요'|'불가', reason: 평이한 한 줄, basis_seq: 근거 citation/step seq들}].
+      [{dimension: 축 이름(예 '용도'·'접도'·'권원'·'조례'·'의제'·'영업신고' 등 이 사안에 맞게), status: '충족'|'주의'|'확인필요'|'불가', reason: 평이한 한 줄, basis_seq: 근거 citation/step seq들,
+        blocking_level: 'critical'(이 축 미충족이면 진행 자체 불가한 핵심축)|'none'(기본), unresolved_by: 'authority'(교육환경·도시계획 등 관할 심의로만 풀림)|'agent'(더 조사하면 풀림)|'user'(사용자 사실확인 필요)|'none'(해소됨)}].
     basis_seq(최상위) = 종합판정의 핵심 근거 seq.
-    환각가드: final_verdict가 '가능'/'가능(조건부)'면 basis_seq 필수 + status '불가' 축이 있으면 안 됨(막힌 축 있으면 종합이 '가능'일 수 없음 → '확인필요'/'위험·금지'로)."""
+    환각가드: final_verdict가 '가능'/'가능(조건부)'면 basis_seq 필수 + **차단 축(status='불가' 또는 blocking_level='critical' 또는 unresolved_by가 agent/authority)이 있으면 안 됨** — 그런 축 위엔 종합이 '가능'일 수 없음(미해소 핵심축 위 '가능' 금지 → '확인필요'/'위험·금지'로). 특히 관할 심의가 선결(unresolved_by='authority')이면 '가능(조건부)'가 아니라 '확인필요'."""
     dims = [d for d in (dimensions or []) if isinstance(d, dict)]
-    blocked = [d for d in dims if str(d.get("status", "")) == "불가"]
-    if final_verdict in ("가능", "가능(조건부)") and (not basis_seq or blocked):
-        why = "인용 근거(basis_seq)가 없다" if not basis_seq else f"'불가' 축({[d.get('dimension') for d in blocked]})이 있는데 종합이 '{final_verdict}'다"
+    # 차단 축 = 불가 OR critical(핵심축 미충족) OR 미해소(agent 더조사·authority 관할심의). 이런 축 위엔 '가능'·'가능(조건부)' 둘 다 못 얹음(완료계약 U3). soft(확인필요)=불확실 축: 무조건'가능'은 막고(가능(조건부)로 낮춤) '가능(조건부)'엔 조건으로 허용. 코드는 LLM-set enum(status/blocking_level/unresolved_by)만 비교, 도메인파싱 0.
+    blocked = [d for d in dims if str(d.get("status", "")) == "불가"
+               or str(d.get("blocking_level", "")) == "critical"
+               or str(d.get("unresolved_by", "none")) in ("agent", "authority")]
+    soft = [d for d in dims if str(d.get("status", "")) == "확인필요"]
+    bad = blocked + soft if final_verdict == "가능" else blocked
+    if final_verdict in ("가능", "가능(조건부)") and (not basis_seq or bad):
+        why = "인용 근거(basis_seq)가 없다" if not basis_seq else f"미충족 축({[(d.get('dimension'), d.get('status'), d.get('unresolved_by', 'none')) for d in bad]})이 있는데 종합이 '{final_verdict}'다 — 불가·critical·미해소(agent/authority) 축 위엔 '가능'계열 불가, '확인필요' 축 위엔 무조건'가능' 불가('가능(조건부)'/'확인필요'로)"
         return Command(update={"_reject_count": 1, "messages": [_tm(
             f"<tool_use_error>종합판정 거부: {why}. 근거를 달거나, 막힌 축이 있으면 final_verdict를 '확인필요'/'위험·금지'로 다시 커밋하라.</tool_use_error>", tool_call_id)]})
     def _mk(d):
         st = str(d.get("status", "주의"))
         if st not in ("충족", "주의", "확인필요", "불가"):
             st = "주의"
+        bl = str(d.get("blocking_level", "none"))
+        if bl not in ("none", "critical"):
+            bl = "none"
+        ub = str(d.get("unresolved_by", "none"))
+        if ub not in ("none", "agent", "authority", "user"):
+            ub = "none"
         return VerdictLabel(dimension=str(d.get("dimension", ""))[:40], status=st,
                             reason=str(d.get("reason", ""))[:200],
-                            basis_seq=[s for s in (d.get("basis_seq") or []) if isinstance(s, int)]).model_dump()
+                            basis_seq=[s for s in (d.get("basis_seq") or []) if isinstance(s, int)],
+                            blocking_level=bl, unresolved_by=ub).model_dump()
     labels = [_mk(d) for d in dims]
-    return Command(update={"verdict_labels": labels, "_llm_verdict": final_verdict, "_toolcalls": ["record_verdict"], "_reject_count": 0,
+    return Command(update={"verdict_labels": labels, "_verdict_round": labels, "_llm_verdict": final_verdict, "_toolcalls": ["record_verdict"], "_reject_count": 0,
                            "messages": [_tm(f"종합판정 기록: {final_verdict} (축 {len(labels)}개)", tool_call_id)]})
 
 
