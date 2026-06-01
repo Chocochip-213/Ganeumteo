@@ -589,6 +589,27 @@ def record_uijae(items: list, tool_call_id: Annotated[str, InjectedToolCallId]) 
 
 
 @tool
+def record_reg_resolution(
+        reg_name: str,
+        status: Annotated[Literal["해소", "미해소", "해당없음", "확인필요"], Field(
+            description="이 중첩규제 해소 판정. 해소=법령 근거로 영향없음/충족 확인. 미해소=영향 있어 추가 절차·제한. 해당없음=이 사업과 무관. 확인필요=판단 근거 부족(기본·기권).")],
+        blocking_level: Annotated[Literal["critical", "normal", "reference"], Field(
+            description="이 규제가 최종 가부에 미치는 차단도. critical=미해소면 신축·진행 자체가 불확실한 핵심 입지제한. normal=일반 절차. reference=참고용.")],
+        basis_seq: list, effect: str,
+        tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+    """중첩규제(reg_overlaps) 1건의 해소 판정을 커밋 — reg_effect_resolve_tool로 법령을 fetch한 뒤 그 근거로 '이 사업에 어떤 영향인지'를 네가 판정해 기록. status/blocking_level은 enum만(자유서술 금지).
+    환각가드: status='해소' 또는 blocking_level='critical' 단정은 근거(basis_seq≥1) 필수 — 없으면 거부(재호출 유도, record_ordinance_ruling 동형)."""
+    seq = [s for s in (basis_seq or []) if isinstance(s, int)]
+    if (status == "해소" or blocking_level == "critical") and not seq:
+        return Command(update={"_reject_count": 1, "messages": [_tm(
+            f"<tool_use_error>'{reg_name}' {status}/{blocking_level} 단정은 근거(basis_seq≥1) 필수. 법령 근거 seq를 달거나 status='확인필요'로 커밋하라.</tool_use_error>", tool_call_id)]})
+    eff = RegEffect(reg_name=reg_name, effect=str(effect)[:200], status=status,
+                    blocking_level=blocking_level, basis_seq=seq).model_dump()
+    return Command(update={"reg_effects": [eff], "_toolcalls": ["record_reg_resolution"], "_reject_count": 0,
+                           "messages": [_tm(f"규제해소 기록: {reg_name} → {status}({blocking_level})", tool_call_id)]})
+
+
+@tool
 def record_ordinance_ruling(
         verdict: Annotated[Literal["가능", "불가", "확인필요"], Field(
             description="조례 별표 호목해소 결론. 가능=제공된 별표 원문 호목이 해당 용도를 명시적으로 허용. "
@@ -715,6 +736,6 @@ def get_building_floors(pnu: str, tool_call_id: Annotated[str, InjectedToolCallI
 TOOLS = [geocode, get_parcel, get_building_register, get_building_floors, get_land_use, get_land_price, act_landuse,
          ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
          compute_envelope, normalize_area, parking_quota, levy_estimate,
-         author_rule_tool, reg_effect_resolve_tool, record_uijae, record_ordinance_ruling, record_verdict,
+         author_rule_tool, reg_effect_resolve_tool, record_uijae, record_reg_resolution, record_ordinance_ruling, record_verdict,
          request_human_input]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}

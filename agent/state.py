@@ -79,7 +79,9 @@ class RegEffect(BaseModel):
     law_name: Optional[str] = None
     article: Optional[str] = None
     effect: str = ""
-    status: str = "근거확보"   # 근거확보 | 확인필요(미해결도 카드서 안 사라지게 보존)
+    status: str = "근거확보"   # 근거확보|확인필요(reg_effect_resolve_tool fetch) · 해소|미해소|해당없음(record_reg_resolution LLM 판정) — 미해결도 카드서 안 사라지게 보존
+    blocking_level: str = "normal"   # LLM이 record_reg_resolution로 세팅: critical|normal|reference(코드는 읽기만 — 어느 규제가 critical인지 코드가 안 정함)
+    basis_seq: List[int] = Field(default_factory=list)   # record_reg_resolution 근거 citation/step seq
 
 
 class AuthorRule(BaseModel):

@@ -35,7 +35,7 @@ def _wrap_tool_call(request, execute):
 _STEP_HARDCAP = 24      # agent 방문 하드캡(무한루프 방지)
 _GUARD_BOUNCE_CAP = 19  # 이 이상이면 guard 바운스 중단(진행)
 _REJECT_CAP = 3         # record 도구 연속 거부 N회면 doom-loop 조기종료(확인필요). step-cap(over≥36)으로도 종료되나 그 전에 끊어 ~32왕복 낭비차단 + 정직한 종료사유(record_loop). '무한방지'가 아니라 '조기종료'(검수B 실측: U1없이도 36왕복서 step_capped 종료)
-_RECORD_TOOLS = {"record_verdict", "record_ordinance_ruling"}   # 판정 커밋 도구(거부 반복 추적 대상; U2서 record_reg_resolution 추가)
+_RECORD_TOOLS = {"record_verdict", "record_ordinance_ruling", "record_reg_resolution"}   # 판정/해소 커밋 도구(근거없는 단정 거부→U1 doom-loop 반복추적 대상)
 
 
 def _norm_ho(ho):
@@ -92,6 +92,8 @@ def completeness_guard(state):
         miss.append("의제")
     if state.get("_delegated") and "ordin_byeolpyo_fetch" not in called:
         miss.append("조례별표")
+    if state.get("reg_overlaps") and "reg_effect_resolve_tool" not in called:
+        miss.append("규제조회")   # 중첩규제(reg_overlaps) 있으면 근거조회 강제 — 미조회 채 '가능' 차단(호출여부 게이트, dedup 무관·robust). 영향판정·critical 표식은 record_reg_resolution/LLM 몫(결함1 fix). stub은 agent.py:98서 호출하므로 자연 satisfy.
     if state.get("pnu"):   # med: 호출여부가 아니라 단계 커버리지 검사
         doc_stages = {d.get("stage_key") for d in state.get("documents", []) if d.get("status") == "전수확보"}   # 실패(확인필요) 단계는 미커버 — 성공만 카운트(실패가 완료로 둔갑 방지)
         # 건축허가(=신축/증축)를 가져왔거나 아직 아무 단계도 안 가져왔으면 신축 3단계 완결성 요구. 그 외(용도변경 등 LLM이 다른 stage 선택)는 그 단계만 — 신축 가정 안 함.
@@ -148,6 +150,15 @@ def _derive_verdict(state):
     return "확인필요"  # 입지 미확보(API실패)도 여기 = 안전 degrade(거짓 가능 방지)
 
 
+def _resolved_regs(state):
+    """reg_effects를 reg_name별 최신 1엔트리로 정리(record_reg_resolution 해소판정이 reg_effect_resolve_tool fetch 뒤에 와 우선·다라운드 stale 제거). 누적 list라 read-time dedup(reducer 무변경=SqliteSaver 안전). 검수 F1/stale②."""
+    out = {}
+    for e in state.get("reg_effects", []):
+        if e.get("reg_name"):
+            out[e["reg_name"]] = e   # 뒤(최신) 우선
+    return out
+
+
 def build_reasoning(state):
     """결정적 논증 골격(부록 E). 각 단계 citation. 서술은 (실 LLM) compose가."""
     steps, seq = [], 0
@@ -163,8 +174,9 @@ def build_reasoning(state):
                          "ordin" if jv.get("verdict") != "확인필요" else None, jv.get("reason", ""), jv.get("verdict", "")))
     for u in state.get("uijae", []):
         steps.append(add("의제", f"{u['trigger']} → {u['permit_name']}", "law"))
-    for r in state.get("reg_effects", []):
-        steps.append(add("규제효과", r["reg_name"], r.get("law_name"), r.get("effect", "")))
+    for r in _resolved_regs(state).values():   # reg_name별 최신(resolution 우선) — fetch+resolution 중복 step 방지(F1)
+        _rok = r.get("status") in ("해소", "해당없음", "근거확보")   # 해소/해당없음/fetch근거=확정, 미해소/확인필요=확인필요
+        steps.append(add("규제효과", r["reg_name"], (r.get("law_name") or "ordin") if _rok else None, r.get("effect", "")))
     sl = state.get("scale_limits")
     if sl:
         steps.append(add("규모임계", "연면적/층수 임계", "law"))
@@ -198,14 +210,15 @@ def build_reasoning(state):
     if key_uncertain and verdict in ("가능", "가능(조건부)", "조건부"):   # H5: 핵심단계 근거없으면 강등
         verdict = "확인필요"
         out.setdefault("abstentions", []).append({"node": "build_reasoning", "gate": "key_uncertain", "사유": "핵심단계(행위제한/조례) 근거 미확보 → 확인필요 강등"})
-    # fail-closed(deny-first): 개발제한/농업진흥 등 강한 규제 겹침 + 행위제한 조문 미확보면 거짓 '가능' 막아 확인필요 보류(코드가 위험·금지 단정 안 함).
-    regs = (state.get("reg_overlaps") or []) + [state.get("zone") or ""]
-    strong_regs = [r for r in regs if ("개발제한" in r) or ("농업진흥" in r)]
-    if strong_regs and verdict in ("가능", "가능(조건부)", "조건부"):
-        grounded = {e.get("reg_name") for e in state.get("reg_effects", []) if e.get("status") == "근거확보"}
-        if not any(any(sr in (g or "") or (g or "") in sr for g in grounded) for sr in strong_regs):
-            verdict = "확인필요"
-            out.setdefault("abstentions", []).append({"node": "build_reasoning", "gate": "strong_regs", "사유": f"강한 행위제한 규제중첩 {strong_regs} — 행위제한 조문 미확보, 사람검토 필요"})
+    # fail-closed(완료계약): 중첩규제(reg_overlaps)를 LLM이 record_reg_resolution로 판정 안 했거나(미판정/조회만) 핵심(critical)인데 미해소면 '가능' 강등 — 핵심축 미해소 위에 '가능' 못 얹음(결함1). 코드는 reg명 의미 안 봄, LLM-set status/blocking_level만 == 비교(strong_regs 개발제한/농업진흥 하드코딩 대체). 해소·해당없음·미해소(normal)=통과, 미판정·조회만(근거확보)·확인필요·미해소(critical)=차단(fail-safe).
+    _rmap = _resolved_regs(state)
+    def _reg_ok(r):
+        e = _rmap.get(r, {}); st, bl = e.get("status"), e.get("blocking_level")
+        return st in ("해소", "해당없음") or (st == "미해소" and bl != "critical")
+    reg_block = [r for r in (state.get("reg_overlaps") or []) if r and not _reg_ok(r)]
+    if reg_block and verdict in ("가능", "가능(조건부)", "조건부"):
+        verdict = "확인필요"
+        out.setdefault("abstentions", []).append({"node": "build_reasoning", "gate": "reg_unresolved", "사유": f"미판정·핵심미해소 중첩규제 {reg_block[:5]}({len(reg_block)}건) → 해소판정 필요(사람검토)"})
     # 선결조건(접도) fail-closed: 맹지(도로 미접)는 신축의 기본 선결(건축법§44 접도의무). 도로지정·사도개설(§45/사도법)로
     #  해소 가능성이 record_uijae로 검토되지 않은 채 '가능'이면 신축 성립 자체가 불확실 → 확인필요 보류(거짓 가능 방지).
     #  용도변경 등 비신축은 새 접도의무가 생기지 않으므로 제외(doc_stages로 신축 여부 판별 — work_type 가정 안 함).
@@ -271,7 +284,7 @@ def compose(state):
         "levies": state.get("levies", []),             # 부담금(농지보전·대체산림·개발) — 금액 없으면 status=확인필요
         "author": state.get("author"),
         "term_notes": state.get("term_notes"),   # 진단맥락 용어설명(프론트 popover)
-        "reg_effects": state.get("reg_effects"),
+        "reg_effects": list(_resolved_regs(state).values()),   # reg_name별 최신(resolution 우선) 중복 제거(검수 F1)
         "citations": len(state.get("citations", [])),
         "abstentions": state.get("abstentions", []),
     }
