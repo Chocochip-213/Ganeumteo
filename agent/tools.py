@@ -627,8 +627,11 @@ def record_ordinance_ruling(
 
 
 @tool
-def request_human_input(question: str, fields: list, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """사용자 확정 입력 요청. 물을 건 **사용자가 직접 아는 사실뿐**(용도·연면적·층수). 의제·용도분류·토지 별도행위·산지전용 여부 같은 법적 판단은 네가 지목·용도지역 데이터로 결정하고 사용자에게 묻지 마라. 질문은 **채팅으로 답하게 평이하게** — '아래 중 체크'·폼·법적분류 선택지 전제 금지(선택지가 꼭 필요하면 질문 문장 안에 풀어라). interrupt로 중단→Command(resume) 재개."""
+def request_human_input(question: str, fields: list,
+        ask_category: Annotated[Literal["user_fact"], Field(
+            description="질문 분류 슬롯 — 'user_fact'(사용자만 아는 사실: 공사범위·권원/소유·주차 실확보·구조변경 여부·work_type 등)만 허용. 보호구역 효과·조례 기준·제출서류·심의 결과처럼 네가 조사(fetch)하거나 관할이 정하는 건 여기서 묻지 마라.")],
+        tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+    """사용자 확정 입력 요청. 물을 건 **사용자가 직접 아는 사실뿐**(용도·연면적·층수·공사범위·권원·주차 실확보·구조변경). ask_category='user_fact' 슬롯을 명시해야 호출 성립(코드는 무엇이 user_fact인지 정의 안 함 — 네가 'user만 아는 사실'임을 단언). 의제·용도분류·토지 별도행위·산지전용·보호구역효과·조례기준 같은 법적 판단/조사대상은 네가 데이터로 결정하고 묻지 마라(심의 결과 같은 관할 재량은 record_verdict 축에 unresolved_by='authority'로). 질문은 **채팅으로 답하게 평이하게** — '아래 중 체크'·폼·법적분류 선택지 전제 금지(선택지가 꼭 필요하면 질문 문장 안에 풀어라). interrupt로 중단→Command(resume) 재개."""
     from langgraph.types import interrupt
     ans = interrupt({"type": "need_input", "question": question, "fields": fields})
     if isinstance(ans, dict) and ans.get("type") == "reject":
