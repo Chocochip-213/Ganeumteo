@@ -119,8 +119,11 @@ def _agent_invoke(llm, msgs):
     try:
         return {"messages": [llm.invoke(msgs)]}
     except Exception as e:
-        return {"messages": [AIMessage(content="")], "terminal_reason": "llm_error",
-                "abstentions": [{"node": "agent", "사유": f"LLM 예외 {type(e).__name__}: {str(e)[:120]}"}]}
+        _n = type(e).__name__
+        _msg = str(e).lower()   # 타입명은 SDK마다 다름(OpenAI ContextLengthExceeded / Anthropic BadRequest) → 메시지로 매칭(검수 A3·S2)
+        _tr = "context_overflow" if any(k in _msg for k in ("context length", "maximum context", "context_length", "prompt is too long", "too many tokens", "reduce the length")) else "llm_error"
+        return {"messages": [AIMessage(content="")], "terminal_reason": _tr,
+                "abstentions": [{"node": "agent", "사유": f"LLM 예외 {_n}: {str(e)[:120]}"}]}
 
 
 # 컨텍스트 편집 = LangChain 내장 ClearToolUsesEdit(Anthropic clear_tool_uses_20250919 미러).

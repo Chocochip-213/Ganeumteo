@@ -638,7 +638,7 @@ async function fetchResult(c, think, followup) {
   c._streaming = false;                 // 진행 종료
   const live = (c === S.active);         // 지금 이 방을 보고 있나 — DOM 갱신은 이때만
   const _ret = j._return || {};
-  if (_ret.terminal_reason === "llm_error") {   // LLM 실패 — 반쪽 결과 대신 '다시하기'(백엔드 status=재시도필요)
+  if (_ret.terminal_reason === "llm_error" || _ret.terminal_reason === "context_overflow") {   // LLM 실패/컨텍스트 초과 — 반쪽 결과 대신 '다시하기'(백엔드 status=재시도필요)
     if (think) think.remove();
     const html = `<div class="retry-box"><span class="rb-msg">${I.bang} 일시적 오류로 분석을 마치지 못했어요.</span><button class="retry-btn" data-act="retry">${I.route} 다시 진단</button></div>`;
     c.msgs.push({ role: "node", html });

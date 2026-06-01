@@ -20,7 +20,8 @@ export const TONE_KO = {
 // terminal_reason → 사용자 상태 라벨(7값 + unknown→완료)
 export const STATUS_KO = {
   completed: "완료", verdict_resolved: "조기종료", need_human: "사람검토",
+  step_capped: "부분완료(단계 한도)", no_grounds: "근거 부족(확인필요)", context_overflow: "재시도필요",
   site_geocode_failed: "재입력필요", fallback_extract_failed: "부분완료",
-  error: "부분완료", aborted: "중단",
+  error: "부분완료", aborted: "중단", llm_error: "재시도필요",
 };
-export function statusKo(tr) { return STATUS_KO[tr] || "완료"; }
+export function statusKo(tr) { return STATUS_KO[tr] || "부분완료(확인 권장)"; }   // 미매핑 종료사유를 '완료'로 위장하지 않음(검수 A2)

@@ -58,7 +58,7 @@
       "kind": "규제효과",
       "fact": "배출시설설치제한지역",
       "basis": null,
-      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "infer": "관련 법령 미상 — 규제명으로 직접 확인 필요",
       "leads": "",
       "status": "확인필요"
      },
@@ -67,7 +67,7 @@
       "kind": "규제효과",
       "fact": "(한강)폐기물매립시설 설치제한지역",
       "basis": null,
-      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "infer": "관련 법령 미상 — 규제명으로 직접 확인 필요",
       "leads": "",
       "status": "확인필요"
      },
@@ -76,7 +76,7 @@
       "kind": "규제효과",
       "fact": "공장설립승인지역",
       "basis": null,
-      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "infer": "관련 법령 미상 — 규제명으로 직접 확인 필요",
       "leads": "",
       "status": "확인필요"
      },
@@ -85,7 +85,7 @@
       "kind": "규제효과",
       "fact": "수질보전특별대책지역",
       "basis": null,
-      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "infer": "검색 시작점: 환경정책기본법 제38조 — 특별대책지역 고시상 행위제한 확인 필요(효과는 원문·결정도서·조례로 확인)",
       "leads": "",
       "status": "확인필요"
      },
@@ -94,7 +94,7 @@
       "kind": "규제효과",
       "fact": "도시지역",
       "basis": null,
-      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "infer": "관련 법령 미상 — 규제명으로 직접 확인 필요",
       "leads": "",
       "status": "확인필요"
      },
@@ -112,7 +112,7 @@
       "kind": "규제효과",
       "fact": "자연보전권역",
       "basis": null,
-      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "infer": "검색 시작점: 수도권정비계획법 제9조 — 권역 행위제한·예외 확인 필요(효과는 원문·결정도서·조례로 확인)",
       "leads": "",
       "status": "확인필요"
      },
@@ -121,7 +121,7 @@
       "kind": "규제효과",
       "fact": "중로2류(폭 15m~20m)",
       "basis": null,
-      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "infer": "관련 법령 미상 — 규제명으로 직접 확인 필요",
       "leads": "",
       "status": "확인필요"
      },
@@ -139,7 +139,7 @@
       "kind": "규제효과",
       "fact": "하수처리구역",
       "basis": null,
-      "infer": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+      "infer": "관련 법령 미상 — 규제명으로 직접 확인 필요",
       "leads": "",
       "status": "확인필요"
      },
@@ -164,7 +164,6 @@
     ],
     "verdict": "확인필요",
     "verdict_basis_seq": [
-     2,
      3
     ]
    },
@@ -759,35 +758,35 @@
      "reg_name": "배출시설설치제한지역",
      "law_name": null,
      "article": null,
-     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "effect": "관련 법령 미상 — 규제명으로 직접 확인 필요",
      "status": "확인필요"
     },
     {
      "reg_name": "(한강)폐기물매립시설 설치제한지역",
      "law_name": null,
      "article": null,
-     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "effect": "관련 법령 미상 — 규제명으로 직접 확인 필요",
      "status": "확인필요"
     },
     {
      "reg_name": "공장설립승인지역",
      "law_name": null,
      "article": null,
-     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "effect": "관련 법령 미상 — 규제명으로 직접 확인 필요",
      "status": "확인필요"
     },
     {
      "reg_name": "수질보전특별대책지역",
      "law_name": null,
      "article": null,
-     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "effect": "검색 시작점: 환경정책기본법 제38조 — 특별대책지역 고시상 행위제한 확인 필요(효과는 원문·결정도서·조례로 확인)",
      "status": "확인필요"
     },
     {
      "reg_name": "도시지역",
      "law_name": null,
      "article": null,
-     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "effect": "관련 법령 미상 — 규제명으로 직접 확인 필요",
      "status": "확인필요"
     },
     {
@@ -801,14 +800,14 @@
      "reg_name": "자연보전권역",
      "law_name": null,
      "article": null,
-     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "effect": "검색 시작점: 수도권정비계획법 제9조 — 권역 행위제한·예외 확인 필요(효과는 원문·결정도서·조례로 확인)",
      "status": "확인필요"
     },
     {
      "reg_name": "중로2류(폭 15m~20m)",
      "law_name": null,
      "article": null,
-     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "effect": "관련 법령 미상 — 규제명으로 직접 확인 필요",
      "status": "확인필요"
     },
     {
@@ -822,7 +821,7 @@
      "reg_name": "하수처리구역",
      "law_name": null,
      "article": null,
-     "effect": "시드 미등록 → 규제명 키워드 DRF 검색 fallback 필요",
+     "effect": "관련 법령 미상 — 규제명으로 직접 확인 필요",
      "status": "확인필요"
     }
    ],

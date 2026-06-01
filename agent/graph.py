@@ -50,7 +50,7 @@ def _norm_ho(ho):
 def route_after_agent(state):
     base_s = state.get("_turn_base_steps", 0)            # 후속턴: 이번 invoke 기준(thread 누적 아님)
     base_t = state.get("_turn_base_tools", 0)
-    if state.get("terminal_reason") in ("site_geocode_failed", "aborted", "error", "llm_error"):  # H4 조기종료 + LLM 실패 즉시 중단(다시하기 유도)
+    if state.get("terminal_reason") in ("site_geocode_failed", "aborted", "error", "llm_error", "context_overflow"):  # H4 조기종료 + LLM 실패/컨텍스트초과 즉시 중단(다시하기 유도)
         return "abstain"
     last = state["messages"][-1]
     over = state.get("_steps", 0) - base_s
@@ -176,21 +176,30 @@ def build_reasoning(state):
         steps.append(add("부담금", f"{lv.get('levy_type')}: {lv.get('formula','')}".strip(),
                          "law" if lv.get("status") == "산출" else None,
                          (f"≈{lv.get('amount'):,}원" if lv.get("amount") is not None else lv.get("note", ""))))
-    verdict = state.get("_llm_verdict") or _derive_verdict(state)   # LLM이 record_verdict로 합성한 최종판정 우선(없으면 코드 fallback). 아래 안전게이트(key_uncertain·강한규제·맹지)는 그대로 적용 → LLM도 over-promise 못 함(downgrade만).
+    # 판정 책임 = LLM(record_verdict). 비stub에서 record_verdict 없으면 코드가 긍정판정 생성 금지 — _derive는 downgrade(위험·금지/확인필요)만(검수 P0 record_verdict 필수화).
+    _llm = state.get("_llm_verdict")
+    _is_stub = bool(os.environ.get("FORCE_STUB") or os.environ.get("APP_MODE") == "stub")
+    if _llm:
+        verdict = _llm
+    elif _is_stub:
+        verdict = _derive_verdict(state)   # stub=결정적 스캐폴드(품질검증 아님)라 _derive 허용
+    else:
+        _d = _derive_verdict(state)
+        verdict = _d if _d in ("위험·금지", "확인필요") else "확인필요"   # 코드는 긍정 못 만듦(record_verdict 없으면 확인필요)
+    out = {}
+    # 안전게이트(key_uncertain·강한규제·맹지)는 LLM verdict에도 동일 적용 → over-promise 차단(downgrade만). 강등 시 gate 흔적 남김(검수 B3).
     key_uncertain = any(s["status"] == "확인필요" and s["kind"] in ("행위제한", "조례호목해소") for s in steps)
     if key_uncertain and verdict in ("가능", "가능(조건부)", "조건부"):   # H5: 핵심단계 근거없으면 강등
         verdict = "확인필요"
-    # fail-closed(deny-first): 개발제한/농업진흥 등 강한 행위제한 규제가 겹쳤는데 그 행위제한 조문이
-    #  reg_effects로 근거확보되지 않았으면, 코드가 위험·금지를 단정하지 않되 거짓 '가능'도 막아 확인필요+사람검토로 보류.
-    #  (해당 규제의 가부 판정은 행위제한 조문 fetch+LLM 또는 사람검토 몫 — 코드 키워드가 최종 verdict를 생성하지 않음.)
+        out.setdefault("abstentions", []).append({"node": "build_reasoning", "gate": "key_uncertain", "사유": "핵심단계(행위제한/조례) 근거 미확보 → 확인필요 강등"})
+    # fail-closed(deny-first): 개발제한/농업진흥 등 강한 규제 겹침 + 행위제한 조문 미확보면 거짓 '가능' 막아 확인필요 보류(코드가 위험·금지 단정 안 함).
     regs = (state.get("reg_overlaps") or []) + [state.get("zone") or ""]
     strong_regs = [r for r in regs if ("개발제한" in r) or ("농업진흥" in r)]
-    out = {}
     if strong_regs and verdict in ("가능", "가능(조건부)", "조건부"):
         grounded = {e.get("reg_name") for e in state.get("reg_effects", []) if e.get("status") == "근거확보"}
         if not any(any(sr in (g or "") or (g or "") in sr for g in grounded) for sr in strong_regs):
             verdict = "확인필요"
-            out["abstentions"] = [{"node": "build_reasoning", "사유": f"강한 행위제한 규제중첩 {strong_regs} — 행위제한 조문 미확보, 사람검토 필요"}]
+            out.setdefault("abstentions", []).append({"node": "build_reasoning", "gate": "strong_regs", "사유": f"강한 행위제한 규제중첩 {strong_regs} — 행위제한 조문 미확보, 사람검토 필요"})
     # 선결조건(접도) fail-closed: 맹지(도로 미접)는 신축의 기본 선결(건축법§44 접도의무). 도로지정·사도개설(§45/사도법)로
     #  해소 가능성이 record_uijae로 검토되지 않은 채 '가능'이면 신축 성립 자체가 불확실 → 확인필요 보류(거짓 가능 방지).
     #  용도변경 등 비신축은 새 접도의무가 생기지 않으므로 제외(doc_stages로 신축 여부 판별 — work_type 가정 안 함).
@@ -200,7 +209,7 @@ def build_reasoning(state):
         _road_resolved = bool({u.get("stage_key") for u in state.get("uijae", [])} & {"사도개설", "도로지정"})
         if _is_sinchuk and not _road_resolved:
             verdict = "확인필요"
-            out.setdefault("abstentions", []).append({"node": "build_reasoning",
+            out.setdefault("abstentions", []).append({"node": "build_reasoning", "gate": "no_road_access",
                 "사유": "맹지(도로 미접) — 신축은 건축법§44 접도의무가 선결. 도로지정·사도개설(§45/사도법) 가능성 미검토 → 사람검토 필요"})
     # 근거 seq = 판정 방향에 맞는 단계만(검수 #5): 긍정이면 '가능' 단계, 확인필요/금지면 '막은/불확실' 단계
     if verdict in ("가능", "가능(조건부)", "조건부"):
@@ -264,6 +273,7 @@ def compose(state):
 
 
 _STATUS = {"completed": "완료", "verdict_resolved": "조기종료", "need_human": "사람검토",
+           "step_capped": "부분완료(단계 한도)", "no_grounds": "근거 부족(확인필요)", "context_overflow": "재시도필요(컨텍스트 초과)",
            "site_geocode_failed": "재입력필요", "fallback_extract_failed": "부분완료",
            "error": "부분완료", "aborted": "중단", "llm_error": "재시도필요"}
 
@@ -278,7 +288,11 @@ def finalize(state):
 
 
 def abstain(state):
-    tr = state.get("terminal_reason") or "need_human"   # H4: 기존 terminal_reason 보존
+    tr = state.get("terminal_reason")
+    if not tr:   # 종료사유 해상도 — 왜 기권했나 분리(검수 A3: 폭주 vs 근거부족 vs 사람검토)
+        over = state.get("_steps", 0) - state.get("_turn_base_steps", 0)
+        subst = [c for c in state.get("citations", []) if c.get("source") in ("law", "ordin", "data")]
+        tr = "step_capped" if over >= _STEP_HARDCAP else ("no_grounds" if (not subst and not state.get("act_verdict")) else "need_human")
     return {"terminal_reason": tr,
             "_card": {"verdict": "확인필요", "terminal": tr,
                       "사유": state.get("abstentions") or "근거(citation) 0건",
