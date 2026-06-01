@@ -158,6 +158,14 @@ def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
 
 
 # ── 조례 별표 BodyText (멀티홉 1번째 홉) ─────────────────────
+def _mark_trunc(cite, full_len, cap, offset=0):
+    """Citation에 truncation 메타 — 캡 산술만(본문 의미 0). truncated=이 창(offset~offset+cap) 뒤에 더 있나(offset+cap<full), read_coverage=여기까지 읽은 비율. source_id=law_name|article(U5)."""
+    cite["source_id"] = f"{cite.get('law_name', '')}|{cite.get('article', '')}"
+    cite["truncated"] = (offset + cap) < full_len
+    cite["read_coverage"] = round(min(offset + cap, full_len) / full_len, 3) if full_len else 1.0
+    return cite
+
+
 def _nows(x): return re.sub(r"\s+", "", _S(x))         # 공백 무시 비교(별표제목 '제1종 일반' vs zone '제1종일반')
 
 def _byeolpyo_units(j):
@@ -220,7 +228,7 @@ def _ordin_bodytext(sigungu, zone):
 
 
 @tool
-def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, InjectedToolCallId], area_cd: str = "") -> Command:
+def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, InjectedToolCallId], area_cd: str = "", offset: Annotated[int, Field(description="긴 별표 본문 이어읽기 시작 위치(문자). 기본 0. ToolMessage가 'offset=N' 알려주면 그 값으로 재호출해 다음 부분 읽기.")] = 0) -> Command:
     """지자체 도시계획조례 '{zone} 건축가능 별표' BodyText. 사전인덱스 HIT 우선→MISS면 라이브 추출. 멀티홉 1홉. area_cd(get_parcel의 행정코드5)를 주면 같은 zone명이 여러 지자체에 겹쳐도 정확매칭(없으면 시군구명 폴백)."""
     # 가늠터 RAG: 사전인덱싱 HIT-first (infra 미연결/MISS/예외면 조용히 라이브 폴백 — Command 형태 불변)
     try:
@@ -233,9 +241,10 @@ def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, I
         art = f"{hit['byeolpyo_no']} {str(hit['byeolpyo_title'])[:30]}"
         cite = Citation(source="ordin", law_name=hit["ordin_name"], article=art,
                         quote=body[:110], extract_method="인덱스청크").model_dump()
+        cite = _mark_trunc(cite, len(body), 12000, offset)
         return Command(update={"citations": [cite], "_delegated": True, "doc_index_hit": True,
                                "_toolcalls": ["ordin_byeolpyo_fetch"],
-                               "messages": [_tm(f"[조례 별표 BodyText(인덱스):{art}]\n{body[:12000]}" + ("" if len(body) <= 12000 else f"\n\n…[본문 {len(body)}자 중 12000자 표시·이후 절단 — 못 찾으면 확인필요]"), tool_call_id)]})
+                               "messages": [_tm(f"[조례 별표 BodyText(인덱스):{art}] (근거ID:{cite['source_id']})\n{body[offset:offset+12000]}" + ("" if (offset + 12000) >= len(body) else f"\n\n…[{len(body)}자 중 {offset}~{offset+12000}자 표시. 이후 {len(body)-(offset+12000)}자 더 — 같은 인자에 offset={offset+12000} 넣어 이어읽어라(끝까지 안 읽고 단정하면 강등). 못 찾으면 확인필요]"), tool_call_id)]})
     # ── 라이브 폴백(기존 경로 — 불변) ──
     text, meta = _ordin_bodytext(sigungu, zone)
     if not text:
@@ -246,12 +255,13 @@ def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, I
     cite = Citation(source="ordin", law_name=meta["조례명"], article=meta["별표"], quote=text[:110],
                     extract_method="BodyText").model_dump()
     # 멀티홉 본문을 ToolMessage로 → (실 LLM) agent가 호목참조 읽고 다음 홉 결정
+    cite = _mark_trunc(cite, len(text), 12000, offset)
     return Command(update={"citations": [cite], "_delegated": True, "doc_index_hit": False, "_toolcalls": ["ordin_byeolpyo_fetch"],
-                           "messages": [_tm(f"[조례 별표 BodyText:{meta['별표']}]\n{text[:12000]}" + ("" if len(text) <= 12000 else f"\n\n…[본문 {len(text)}자 중 12000자 표시·이후 절단 — 못 찾으면 확인필요]"), tool_call_id)]})
+                           "messages": [_tm(f"[조례 별표 BodyText:{meta['별표']}] (근거ID:{cite['source_id']})\n{text[offset:offset+12000]}" + ("" if (offset + 12000) >= len(text) else f"\n\n…[{len(text)}자 중 {offset}~{offset+12000}자 표시. 이후 {len(text)-(offset+12000)}자 더 — 같은 인자에 offset={offset+12000} 넣어 이어읽어라(끝까지 안 읽고 단정하면 강등). 못 찾으면 확인필요]"), tool_call_id)]})
 
 
 @tool
-def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[str, InjectedToolCallId], offset: Annotated[int, Field(description="긴 별표 본문 이어읽기 시작 위치(문자). 기본 0. ToolMessage가 'offset=N' 알려주면 그 값으로 재호출해 다음 부분 읽기.")] = 0) -> Command:
     """국가법령(본법/시행령/시행규칙)의 별표 inline 텍스트(원문 전체). 어느 법이든.
     입력: law_name=법령명(안 맞으면 후보 목록 반환→재시도). byeolpyo_kw=별표 번호('1') 또는 제목 키워드('용도별').
     별표 본문 전체를 반환하니(예 건축법 시행령 별표1 용도분류 ~11k자), 네가 원문을 직접 읽어 해당 호목·용도 포함 여부를 끝까지 확인하라.
@@ -277,11 +287,11 @@ def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[
             t = re.sub(r"\s+", " ", _S(b.get("별표내용")))
             _bno = _S(b.get("별표번호")).lstrip("0") or "1"   # "0001"→"1"(표시용)
             # 인용 quote는 별표 '제목'만(전체 호 raw dump 금지 — 핵심 호목 근거는 조례 판정 인용이 제공)
-            cite = Citation(source="law", law_name=law_name, article=f"별표 {_bno}", quote=_S(b.get("별표제목"))[:60]).model_dump()
-            body = t[:20000]   # 별표 본문 전체 노출(건축법 별표1 ~11k자 — gpt-5.2 컨텍스트에 충분). 호 파싱 휴리스틱 안 씀, LLM이 원문 직접 읽음
-            tail = "" if len(t) <= 20000 else f"\n\n…[본문 {len(t)}자 중 20000자까지 표시·이후 절단. 더 좁은 별표 번호/제목으로 재호출하거나 끝내 못 찾으면 확인필요로 둬라]"
+            cite = _mark_trunc(Citation(source="law", law_name=law_name, article=f"별표 {_bno}", quote=_S(b.get("별표제목"))[:60]).model_dump(), len(t), 20000, offset)
+            body = t[offset:offset+20000]   # 별표 본문 창(건축법 별표1 ~11k자 — 보통 한 창에 다 들어옴). 호 파싱 휴리스틱 안 씀, LLM이 원문 직접 읽음
+            tail = "" if (offset + 20000) >= len(t) else f"\n\n…[{len(t)}자 중 {offset}~{offset+20000}자 표시. 이후 {len(t)-(offset+20000)}자 더 — 같은 인자에 offset={offset+20000} 넣어 이어읽거나 더 좁은 별표 번호/제목으로 재호출. 끝까지 안 읽고 단정하면 강등, 못 찾으면 확인필요]"
             return Command(update={"citations": [cite], "_toolcalls": ["law_byeolpyo_fetch"],
-                                   "messages": [_tm(f"[{law_name} {byeolpyo_kw}]\n{body}{tail}", tool_call_id)]})
+                                   "messages": [_tm(f"[{law_name} {byeolpyo_kw}] (근거ID:{cite['source_id']})\n{body}{tail}", tool_call_id)]})
     cands = [(_S(b.get("별표번호")), _S(b.get("별표제목"))[:30]) for b in bu if isinstance(b, dict)]   # 형제(law_article_fetch)와 동일 — 후보 돌려줘 LLM 재호출
     return Command(update={"_toolcalls": ["law_byeolpyo_fetch"],
                            "messages": [_tm(f"별표 못찾음. '{law_name}' 별표 후보: {cands}. 정확한 번호나 제목으로 재호출.", tool_call_id)]})
@@ -332,7 +342,7 @@ def _fmt_article(u):
 
 
 @tool
-def law_article_fetch(law_name: str, article: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+def law_article_fetch(law_name: str, article: str, tool_call_id: Annotated[str, InjectedToolCallId], offset: Annotated[int, Field(description="긴 조문 이어읽기 시작 위치(문자). 기본 0. ToolMessage가 'offset=N' 알려주면 그 값으로 재호출해 다음 부분 읽기.")] = 0) -> Command:
     """국가법령(본법/시행령/시행규칙)의 **조문**(별표 아님) inline 텍스트. law_byeolpyo_fetch의 형제.
     입력: law_name=법령명. 정식명이 안 맞으면 검색 후보 목록을 돌려주니, 그 중 맞는 정식명으로 다시 호출하라(여러 이름 시도 OK). article=조문번호('84'·'제84조'·'47의2'·'85의2').
     용도: 시행령 §84/§85(건폐율·용적률 상한)·§86(일조)·농지법 §38·시행령 §53(부담금율)·시행규칙 §47의2(부담금 단가상한)·경관법 시행령 §18/§19(경관심의 임계)·영향평가 시행령 임계 등 **값을 LLM이 원문서 읽어** 다른 도구 인자로 전달하는 공급원."""
@@ -362,10 +372,10 @@ def law_article_fetch(law_name: str, article: str, tool_call_id: Annotated[str, 
             continue
         title, full = _fmt_article(u)
         label = f"제{jono}조" + (f"의{branch}" if branch else "")
-        cite = Citation(source="law", law_name=law_name, article=f"{label}({title})" if title else label,
-                        quote=full[:200]).model_dump()
+        cite = _mark_trunc(Citation(source="law", law_name=law_name, article=f"{label}({title})" if title else label,
+                        quote=full[:200]).model_dump(), len(full), 7000, offset)
         return Command(update={"citations": [cite], "_toolcalls": ["law_article_fetch"],
-                               "messages": [_tm(f"[{law_name} {label}{('('+title+')') if title else ''}]\n{full[:7000]}" + ("" if len(full) <= 7000 else f"\n\n…[조문 {len(full)}자 중 7000자 표시·이후 절단 — 항·호를 좁혀 재확인하거나 못 찾으면 확인필요]"), tool_call_id)]})
+                               "messages": [_tm(f"[{law_name} {label}{('('+title+')') if title else ''}] (근거ID:{cite['source_id']})\n{full[offset:offset+7000]}" + ("" if (offset + 7000) >= len(full) else f"\n\n…[{len(full)}자 중 {offset}~{offset+7000}자 표시. 이후 {len(full)-(offset+7000)}자 더 — 같은 인자에 offset={offset+7000} 넣어 이어읽거나 항·호를 좁혀 재호출. 끝까지 안 읽고 단정하면 강등, 못 찾으면 확인필요]"), tool_call_id)]})
     return Command(update={"_toolcalls": ["law_article_fetch"],
                            "messages": [_tm(f"'{law_name}' 제{jono}조{('의'+branch) if branch else ''} 조문 못찾음(번호 확인 후 재시도).", tool_call_id)]})
 
@@ -614,14 +624,16 @@ def record_ordinance_ruling(
         verdict: Annotated[Literal["가능", "불가", "확인필요"], Field(
             description="조례 별표 호목해소 결론. 가능=제공된 별표 원문 호목이 해당 용도를 명시적으로 허용. "
                         "불가=원문이 명시적으로 금지. 확인필요=별표 본문 미확보·호목 참조 미해소·근거 불충분 등 판단 불가(기본값, 기권).")],
-        hojeok_path: str, cited_count: int,
+        hojeok_path: str, cited_count: int, relied_source_ids: list,
         tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """agent 멀티홉 호목해소 결론 커밋. verdict는 위 3개 enum 중 하나만(자유서술 금지).
-    환각가드: '가능/불가' 단정은 인용근거(cited_count≥1) 필수(precondition) + build_reasoning(basis)·route(citations==0→abstain) 다층."""
+    relied_source_ids = 이 판정이 의존한 근거ID들(ToolMessage 머리의 '근거ID:...'를 그대로). 그 근거 별표가 표시한도서 잘렸으면(truncated) '가능/불가' 단정이 자동 강등(확인필요)된다 → 잘린 별표면 더 좁은 번호로 재호출해 전문 확보 후 단정하라.
+    환각가드: '가능/불가' 단정은 인용근거(cited_count≥1) 필수(precondition) + build_reasoning(basis·truncated_basis)·route(citations==0→abstain) 다층."""
     if verdict in ("가능", "불가") and cited_count < 1:   # 근거 없는 단정 거부 — 재호출 유도(_toolcalls 안 남겨 retry 열어둠)
         return Command(update={"_reject_count": 1, "messages": [_tm(
             f"<tool_use_error>'{verdict}' 단정은 인용 근거가 필요(cited_count≥1). 별표 원문 호목을 인용해 다시 커밋하거나, 근거 없으면 verdict='확인필요'로 커밋하라.</tool_use_error>", tool_call_id)]})
-    return Command(update={"jorye_verdicts": [JoryeVerdict(verdict=verdict, reason=hojeok_path[:200]).model_dump()],
+    _sids = [str(s) for s in (relied_source_ids or []) if s]
+    return Command(update={"jorye_verdicts": [JoryeVerdict(verdict=verdict, reason=hojeok_path[:200], relied_source_ids=_sids).model_dump()],
                            "_toolcalls": ["record_ordinance_ruling"], "_reject_count": 0,
                            "messages": [_tm(f"조례판정 기록: {verdict} ({hojeok_path})", tool_call_id)]})
 

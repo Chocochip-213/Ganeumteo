@@ -858,7 +858,10 @@
    "title": "지적(필지) 정보 — 국토교통부 연속지적도",
    "quote": "지목 답",
    "url": null,
-   "extract_method": null
+   "extract_method": null,
+   "source_id": null,
+   "truncated": false,
+   "read_coverage": null
   },
   {
    "source": "data",
@@ -867,7 +870,10 @@
    "title": null,
    "quote": "건강보험공단 사무소 → 가능",
    "url": null,
-   "extract_method": null
+   "extract_method": null,
+   "source_id": null,
+   "truncated": false,
+   "read_coverage": null
   },
   {
    "source": "law",
@@ -876,7 +882,10 @@
    "title": null,
    "quote": "① 제11조제1항에 따라 건축허가를 받아야 하거나 제14조제1항에 따라 건축신고를 하여야 하는 건축물 또는 「주택법」 제66조제1항 또는 제2항에 따른 리모델링을 하는 건축물의 건축등을 위한 설계는 건축사가 아니면 할 수 없다. 다만, 다음 각 호의 어느 하나에 해당하는 경우에는 그러하지 아니하다. <개정 2014.5.28, 2016.1.19>",
    "url": null,
-   "extract_method": null
+   "extract_method": null,
+   "source_id": null,
+   "truncated": false,
+   "read_coverage": null
   },
   {
    "source": "law",
@@ -885,7 +894,10 @@
    "title": null,
    "quote": "제84조(용도지역안에서의 건폐율) ①법 제77조제1항 및 제2항에 따른 건폐율은 다음 각 호의 범위에서 특별시ㆍ광역시ㆍ특별자치시ㆍ특별자치도ㆍ시 또는 군의 도시ㆍ군계획조례가 정하는 비율 이하로 한다. <개정 2012.4.10, 2019.12.31> 1. 제1종전용주거지역 : 50퍼센트 이하 2. 제2종전용주거지역 : 50퍼센트 이하 3. 제1종일반주거지역 :",
    "url": null,
-   "extract_method": null
+   "extract_method": null,
+   "source_id": "국토의 계획 및 이용에 관한 법률 시행령|제84조(용도지역안에서의 건폐율)",
+   "truncated": false,
+   "read_coverage": 1.0
   },
   {
    "source": "law",
@@ -894,7 +906,10 @@
    "title": null,
    "quote": "부설주차장의 설치대상 시설물 종류 및 설치기준(제6조제1항 관련)",
    "url": null,
-   "extract_method": null
+   "extract_method": null,
+   "source_id": "주차장법 시행령|별표 1",
+   "truncated": false,
+   "read_coverage": 1.0
   }
  ]
 }

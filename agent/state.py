@@ -23,6 +23,9 @@ class Citation(BaseModel):
     quote: str = ""                   # 원문 인용 ≤200
     url: Optional[str] = None
     extract_method: Optional[str] = None   # 조례 청크 출처: 인덱스청크|BodyText|PrvText(캡)|hwpx (가늠터 UI)
+    source_id: Optional[str] = None        # 근거 식별자(law_name|article) — record_ordinance_ruling relied_source_ids 매칭(U5)
+    truncated: bool = False                # 본문이 표시 캡에서 잘렸나(잘린 근거 위 단정 금지 — build_reasoning truncated_basis 게이트)
+    read_coverage: Optional[float] = None  # 표시/전체 비율(0~1) — 진단·표시용, 게이트 임계로는 안 씀
 
 
 class UijaeItem(BaseModel):
@@ -65,6 +68,7 @@ class JoryeVerdict(BaseModel):
     byeolpyo: Optional[str] = None
     verdict: Literal["가능", "불가", "확인필요"] = "확인필요"
     reason: Optional[str] = None
+    relied_source_ids: List[str] = Field(default_factory=list)   # 이 판정이 의존한 근거 source_id들 — 잘린 근거 의존 단정을 build_reasoning이 강등(U5)
 
 
 class VerdictLabel(BaseModel):

@@ -66,7 +66,7 @@ def stub_plan(state):
     if "ordin_byeolpyo_fetch" in called and "law_byeolpyo_fetch" not in called:
         return _call("law_byeolpyo_fetch", {"law_name": "건축법 시행령", "byeolpyo_kw": "용도별"})
     if "law_byeolpyo_fetch" in called and "record_ordinance_ruling" not in called:
-        return _call("record_ordinance_ruling", {"verdict": "확인필요", "cited_count": 0,
+        return _call("record_ordinance_ruling", {"verdict": "확인필요", "cited_count": 0, "relied_source_ids": [],
                      "hojeok_path": "[stub] 조례별표+건축법령별표1 본문 확보 — 호목 멀티홉 해소는 실 LLM 필요"})
     # 의제
     jimok = state.get("jimok")

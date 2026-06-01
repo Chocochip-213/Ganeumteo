@@ -219,6 +219,19 @@ def build_reasoning(state):
     if reg_block and verdict in ("가능", "가능(조건부)", "조건부"):
         verdict = "확인필요"
         out.setdefault("abstentions", []).append({"node": "build_reasoning", "gate": "reg_unresolved", "사유": f"미판정·핵심미해소 중첩규제 {reg_block[:5]}({len(reg_block)}건) → 해소판정 필요(사람검토)"})
+    # truncation gate(U5): '가능' 조례판정이 '끝까지 못 읽힌 별표'에 의존하면 단정 불가 → 강등(확인필요). 코드는 캡 산술 truncated boolean·source_id 집합매칭만(본문 의미 0).
+    #  P1a(검수A): source_id별 — 완독창(truncated=False, offset 페이징으로 끝 도달)이 하나라도 있으면 면제. 모든 창이 잘렸을 때만 '미완독'(과강등 방지·offset 정합). P1b: 위험·금지(jorye '불가')는 안전종착이라 별도 강등 안 함(과경고는 안전, 가능계열만).
+    _by_src = {}
+    for c in state.get("citations", []):
+        if c.get("source_id"):
+            _by_src.setdefault(c["source_id"], []).append(bool(c.get("truncated")))
+    _trunc_ids = {sid for sid, fl in _by_src.items() if fl and all(fl)}
+    if _trunc_ids and verdict in ("가능", "가능(조건부)", "조건부"):
+        _bad = [jv for jv in state.get("jorye_verdicts", [])
+                if jv.get("verdict") == "가능" and (set(jv.get("relied_source_ids") or []) & _trunc_ids)]
+        if _bad:
+            verdict = "확인필요"
+            out.setdefault("abstentions", []).append({"node": "build_reasoning", "gate": "truncated_basis", "사유": "조례 '가능' 판정 근거 별표가 끝까지 안 읽힘(완독창 없음) — offset으로 이어읽거나 더 좁은 별표로 전문 확인 필요(확인필요)"})
     # 선결조건(접도) fail-closed: 맹지(도로 미접)는 신축의 기본 선결(건축법§44 접도의무). 도로지정·사도개설(§45/사도법)로
     #  해소 가능성이 record_uijae로 검토되지 않은 채 '가능'이면 신축 성립 자체가 불확실 → 확인필요 보류(거짓 가능 방지).
     #  용도변경 등 비신축은 새 접도의무가 생기지 않으므로 제외(doc_stages로 신축 여부 판별 — work_type 가정 안 함).
