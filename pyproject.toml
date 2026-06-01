@@ -11,6 +11,7 @@ dependencies = [
     "langchain-core>=1.4.0",
     "langchain-openai>=1.2.2",
     "langgraph>=1.2.2",
+    "langgraph-checkpoint-sqlite>=3.1.0",
     "olefile>=0.47",
     "openai>=2.38.0",
     "pgvector>=0.4.2",

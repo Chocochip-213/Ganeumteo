@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""react_proto LangGraph로의 단일 import 경계. 그래프 1회 빌드(MemorySaver 체크포인터).
+"""react_proto LangGraph로의 단일 import 경계. 그래프 1회 빌드(SqliteSaver 파일 영속 체크포인터; stub은 in-memory).
 검수 fix#4: sys.path에 ganeomteo도 넣어 react_proto/tools.py의 `import infra.ordin_rag` 동작 + RAG 임포트 스모크(죽은 RAG 가시화)."""
 import sys
 from pathlib import Path

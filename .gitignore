@@ -9,3 +9,4 @@ qa/fixtures/*.txt
 .venv/
 .idea/
 backend/_verify_docs.py
+ganeomteo_checkpoints.db*

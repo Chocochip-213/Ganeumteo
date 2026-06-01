@@ -367,5 +367,12 @@ def build_graph():
     b.add_edge("abstain", "finalize")
     b.add_edge("chat_end", END)
     b.add_edge("finalize", END)
-    from langgraph.checkpoint.memory import MemorySaver
-    return b.compile(checkpointer=MemorySaver()), mode   # H3: interrupt(HITL) 가능하게
+    import sqlite3
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    _is_stub = bool(os.environ.get("FORCE_STUB") or os.environ.get("APP_MODE") == "stub")
+    # 실 LLM=단일파일 영속(재시작 후 thread resume) · stub/테스트=in-memory(파일 오염·무한증가 방지·결정적). 단일파일까지만(Postgres·락 과설계 안 함).
+    # ⚠️ 운영 파일 db는 checkpoint가 thread별 무한 누적(retention/TTL 없음 — 데모 가정) → 주기적으로 ganeomteo_checkpoints.db* 삭제로 리셋(운영 전환시 delete_thread retention 잡 추가).
+    _db = ":memory:" if _is_stub else os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ganeomteo_checkpoints.db")
+    _conn = sqlite3.connect(_db, check_same_thread=False)   # FastAPI 멀티스레드 invoke → check_same_thread=False (+SqliteSaver 내부 threading.Lock이 쓰기 직렬화)
+    _saver = SqliteSaver(_conn); _saver.setup()             # 체크포인트 테이블 생성(idempotent)
+    return b.compile(checkpointer=_saver), mode             # H3: interrupt(HITL) sqlite 영속 — 실 LLM은 프로세스 재시작 후에도 thread resume
