@@ -447,12 +447,13 @@ def explain_terms(notes: list, tool_call_id: Annotated[str, InjectedToolCallId])
 
 @tool
 def compute_scale(floor_area: float, floor_count: int, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """연면적/층수→규모상한 결정적 룰(에너지≥500·구조안전≥200 or 2층)."""
+    """연면적/층수→규모상한 결정적 룰(에너지≥500㎡·구조안전≥200㎡ or 2층). 임계값은 결정적 법정상수(계산기라 코드 상존).
+    **이 플래그가 켜지면 근거 조문을 law_article_fetch로 직접 인용하라**(코드는 조문을 박지 않음 — 현행 원문에서): 에너지=녹색건축물 조성 지원법 시행령 제10조, 구조안전=건축법 시행령 제32조. 목구조·창고·단독주택 등 예외와 시행일은 원문에서 확인(코드의 임계는 그 예외 미반영=과대상이라 안전이나, 실 해당여부는 원문)."""
     sl = ScaleLimit(energy_saving_required=floor_area >= 500,
                     structural_safety_required=(floor_area >= 200 or floor_count >= 2),
                     notes=[f"연면적 {floor_area}㎡·{floor_count}층"]).model_dump()
     return Command(update={"scale_limits": sl, "_toolcalls": ["compute_scale"],
-                           "messages": [_tm(f"규모상한: 에너지={sl['energy_saving_required']} 구조안전={sl['structural_safety_required']}", tool_call_id)]})
+                           "messages": [_tm(f"규모상한: 에너지={sl['energy_saving_required']} 구조안전={sl['structural_safety_required']}(근거조문은 law_article_fetch로 인용)", tool_call_id)]})
 
 
 @tool
