@@ -120,18 +120,23 @@ def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
                 tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """행위제한 1차판정 + 조례위임 감지. data.go.kr 1613000.
     입력: zone_ucode=get_land_use의 UQ코드 **전부를 콤마로 이어** 그대로(예 UQA001,UQA121 — 상위 generic 코드는 빈값이라 API가 specific 코드에서 행위제한 회수). use_type=**건축법 별표1의 가장 구체적인 세목 시설명**(사용자 표현을 그 세목명으로 해석 — 예 카페→일반음식점, 사무실→업무시설, 다세대→공동주택). **주의: 이 API는 시설명을 부분문자열로 매칭한다** → 넓은 상위분류('운동시설')로 질의하면 엉뚱한 세목('가축용 운동시설')이 substring으로 잡힐 수 있다. 반드시 구체 세목으로 질의하고, 반환된 시설명(NODE_DESC)이 의도한 시설과 다르면 그 결과를 근거로 쓰지 말고 별표1 호목으로 직접 해소하라. area_cd=get_parcel의 area_cd(PNU 앞5).
-    반환 act_verdict∈{가능(법령직접), 조례확인필요(혼재), 조례확인필요}. 빈값·혼재=조례위임(_delegated=True) → 단정 말고 ordin_byeolpyo_fetch로 진행."""
+    반환 act_verdict∈{가능(법령직접), 조례확인필요(혼재), 조례확인필요(조건부), 조례확인필요}. 빈값·혼재·조건부=조례위임(_delegated=True) → 단정 말고 ordin_byeolpyo_fetch로 진행."""
     det = W.act_detail(zone_ucode, use_type, area_cd)   # item별 reg+근거조항+시설명 — act가 버리던 근거 보존
     rg = [d["reg"] for d in det]                          # 가부 신호(REG_NM=API 자체 판정 enum; 도구는 읽기만, 단정 아님)
-    has_y, has_n = any("가능" in x for x in rg), any("금지" in x for x in rg)
-    if has_y and not has_n:
+    # REG_NM(API 자체판정 enum={가능,금지,조건,빈값}) 정밀독 — 값 그대로 읽음(도구는 enum 읽기만, 단정 아님).
+    has_y = any("가능" in x for x in rg)      # '가능'
+    has_n = any("금지" in x for x in rg)      # '금지'=부정/조례위임
+    has_cond = any("조건" in x for x in rg)   # '조건'=조건부 건축(별표서 조건 확인)
+    if has_y and not has_n and not has_cond:
         v, dele = "가능(법령직접)", False
     elif has_y and has_n:
-        v, dele = "조례확인필요(혼재)", True   # 가능·금지 혼재 → 단정 금지
+        v, dele = "조례확인필요(혼재)", True    # 가능·금지 혼재 → 단정 금지
+    elif has_cond:
+        v, dele = "조례확인필요(조건부)", True   # 조건 → 조례·별표서 조건 확인(단정 금지)
     elif has_n:
-        v, dele = "조례확인필요", True         # 금지=입지제한/조례위임 가능성
+        v, dele = "조례확인필요", True          # 금지=입지제한/조례위임 가능성
     else:
-        v, dele = "조례확인필요", True         # 빈값·조건=조례 위임(조건부는 조례에서 확인)
+        v, dele = "조례확인필요", True          # 빈값=조례 위임
     # 인용 정리: 같은 (조항·시설)끼리 묶어 중복 UQ코드 제거 + 가능/금지 혼재(용도지역 중첩)는 한 줄로 정직 표기
     _grp = {}                                    # (ref_law,node) → set(reg)
     for d in det:

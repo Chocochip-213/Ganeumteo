@@ -46,18 +46,28 @@ def ned(ep,pnu,ex=None):
     except: return {}
 def dig(j,k): return re.findall(rf'"{k}"\s*:\s*"([^"]*)"',json.dumps(j,ensure_ascii=False))
 def act(uc,nm,ac):
-    r=get("http://apis.data.go.kr/1613000/arLandUseInfoService/DTarLandUseInfo",{"serviceKey":DK,"areaCd":ac,"ucodeList":uc,"landUseNm":nm,"numOfRows":5,"pageNo":1},euckr=True)
-    return re.findall(r"<REG_NM>(.*?)</REG_NM>",r)
+    out=[]; page=1
+    while True:   # 전수 순회 — 5건 고정 절단 제거(뒤페이지 '금지' 누락 시 거짓 가능 방지)
+        r=get("http://apis.data.go.kr/1613000/arLandUseInfoService/DTarLandUseInfo",{"serviceKey":DK,"areaCd":ac,"ucodeList":uc,"landUseNm":nm,"numOfRows":100,"pageNo":page},euckr=True)
+        regs=re.findall(r"<REG_NM>(.*?)</REG_NM>",r)
+        out+=regs
+        if len(regs)<100 or page>=10: break
+        page+=1
+    return out
 
 def act_detail(uc,nm,ac):
     """행위제한 응답을 item별로 파싱 — REG_NM(가부신호)+LU_REF_LAW_NM1(근거조항)+NODE_DESC(시설명) 동반 반환.
-    act()가 버리던 근거조항을 보존해 LLM이 인용·판정 근거로 쓰게 함(grounding 복구)."""
-    r=get("http://apis.data.go.kr/1613000/arLandUseInfoService/DTarLandUseInfo",{"serviceKey":DK,"areaCd":ac,"ucodeList":uc,"landUseNm":nm,"numOfRows":5,"pageNo":1},euckr=True)
-    out=[]
-    for it in re.findall(r"<item>(.*?)</item>",r,re.S):
-        g=lambda k:(re.findall(rf"<{k}>(.*?)</{k}>",it,re.S) or [""])[0].strip()
-        reg=g("REG_NM")
-        if reg: out.append({"reg":reg,"ref_law":g("LU_REF_LAW_NM1"),"node":g("NODE_DESC")})
+    act()가 버리던 근거조항을 보존해 LLM이 인용·판정 근거로 쓰게 함(grounding 복구). 전수 pagination(5건 절단 제거)."""
+    out=[]; page=1
+    while True:
+        r=get("http://apis.data.go.kr/1613000/arLandUseInfoService/DTarLandUseInfo",{"serviceKey":DK,"areaCd":ac,"ucodeList":uc,"landUseNm":nm,"numOfRows":100,"pageNo":page},euckr=True)
+        items=re.findall(r"<item>(.*?)</item>",r,re.S)
+        for it in items:
+            g=lambda k:(re.findall(rf"<{k}>(.*?)</{k}>",it,re.S) or [""])[0].strip()
+            reg=g("REG_NM")
+            if reg: out.append({"reg":reg,"ref_law":g("LU_REF_LAW_NM1"),"node":g("NODE_DESC")})
+        if len(items)<100 or page>=10: break   # 뒤페이지 금지/조건 누락 방지
+        page+=1
     return out
 
 def building_register(pnu):
