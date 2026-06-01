@@ -34,6 +34,8 @@ def _wrap_tool_call(request, execute):
 
 _STEP_HARDCAP = 24      # agent 방문 하드캡(무한루프 방지)
 _GUARD_BOUNCE_CAP = 19  # 이 이상이면 guard 바운스 중단(진행)
+_REJECT_CAP = 3         # record 도구 연속 거부 N회면 doom-loop 조기종료(확인필요). step-cap(over≥36)으로도 종료되나 그 전에 끊어 ~32왕복 낭비차단 + 정직한 종료사유(record_loop). '무한방지'가 아니라 '조기종료'(검수B 실측: U1없이도 36왕복서 step_capped 종료)
+_RECORD_TOOLS = {"record_verdict", "record_ordinance_ruling"}   # 판정 커밋 도구(거부 반복 추적 대상; U2서 record_reg_resolution 추가)
 
 
 def _norm_ho(ho):
@@ -55,6 +57,8 @@ def route_after_agent(state):
     last = state["messages"][-1]
     over = state.get("_steps", 0) - base_s
     if getattr(last, "tool_calls", None):   # 펜딩 도구는 캡보다 먼저 실행해 ToolMessage로 매칭 — dangling tool_use(검수 #1) 방지
+        if state.get("_reject_count", 0) >= _REJECT_CAP and any(tc.get("name") in _RECORD_TOOLS for tc in last.tool_calls):
+            return "abstain"   # U1: 판정도구 연속거부≥N + 또 판정 재시도 = doom-loop → 조기종료(확인필요). any()=record가 끼면 단독이든 fetch 병렬동반이든 끊음(거부 누적 후 곁다리 fetch는 회복보다 flailing 가능성↑·fail-closed라 안전·step-cap 백스톱). 단독 비판정 도구(fetch만)는 통과(구조신호만, 도메인파싱 0).
         return "abstain" if over >= _STEP_HARDCAP + 12 else "tools"   # 폭주 한계서만 abstain(abstain은 LLM 재호출 없어 미매칭 tool_call 무해)
     if over >= _STEP_HARDCAP:    # 텍스트 응답(펜딩 도구 없음) 시점에만 하드캡 — 안전. followup 누적 잠금 방지(검수 AF-3)
         return "completeness_guard"
@@ -276,6 +280,7 @@ def compose(state):
 
 _STATUS = {"completed": "완료", "verdict_resolved": "조기종료", "need_human": "사람검토",
            "step_capped": "부분완료(단계 한도)", "no_grounds": "근거 부족(확인필요)", "context_overflow": "재시도필요(컨텍스트 초과)",
+           "record_loop": "확인필요(판정 근거 반복 미확보)",
            "site_geocode_failed": "재입력필요", "fallback_extract_failed": "부분완료",
            "error": "부분완료", "aborted": "중단", "llm_error": "재시도필요"}
 
@@ -292,9 +297,12 @@ def finalize(state):
 def abstain(state):
     tr = state.get("terminal_reason")
     if not tr:   # 종료사유 해상도 — 왜 기권했나 분리(검수 A3: 폭주 vs 근거부족 vs 사람검토)
-        over = state.get("_steps", 0) - state.get("_turn_base_steps", 0)
-        subst = [c for c in state.get("citations", []) if c.get("source") in ("law", "ordin", "data")]
-        tr = "step_capped" if over >= _STEP_HARDCAP else ("no_grounds" if (not subst and not state.get("act_verdict")) else "need_human")
+        if state.get("_reject_count", 0) >= _REJECT_CAP:   # U1: 판정 도구 반복거부로 강제종료 — 근거 못 단 채 단정 반복
+            tr = "record_loop"
+        else:
+            over = state.get("_steps", 0) - state.get("_turn_base_steps", 0)
+            subst = [c for c in state.get("citations", []) if c.get("source") in ("law", "ordin", "data")]
+            tr = "step_capped" if over >= _STEP_HARDCAP else ("no_grounds" if (not subst and not state.get("act_verdict")) else "need_human")
     return {"terminal_reason": tr,
             "_card": {"verdict": "확인필요", "terminal": tr,
                       "사유": state.get("abstentions") or "근거(citation) 0건",

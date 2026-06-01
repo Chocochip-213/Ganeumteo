@@ -598,10 +598,10 @@ def record_ordinance_ruling(
     """agent 멀티홉 호목해소 결론 커밋. verdict는 위 3개 enum 중 하나만(자유서술 금지).
     환각가드: '가능/불가' 단정은 인용근거(cited_count≥1) 필수(precondition) + build_reasoning(basis)·route(citations==0→abstain) 다층."""
     if verdict in ("가능", "불가") and cited_count < 1:   # 근거 없는 단정 거부 — 재호출 유도(_toolcalls 안 남겨 retry 열어둠)
-        return Command(update={"messages": [_tm(
+        return Command(update={"_reject_count": 1, "messages": [_tm(
             f"<tool_use_error>'{verdict}' 단정은 인용 근거가 필요(cited_count≥1). 별표 원문 호목을 인용해 다시 커밋하거나, 근거 없으면 verdict='확인필요'로 커밋하라.</tool_use_error>", tool_call_id)]})
     return Command(update={"jorye_verdicts": [JoryeVerdict(verdict=verdict, reason=hojeok_path[:200]).model_dump()],
-                           "_toolcalls": ["record_ordinance_ruling"],
+                           "_toolcalls": ["record_ordinance_ruling"], "_reject_count": 0,
                            "messages": [_tm(f"조례판정 기록: {verdict} ({hojeok_path})", tool_call_id)]})
 
 
@@ -646,7 +646,7 @@ def record_verdict(final_verdict: Annotated[Literal["가능", "가능(조건부)
     blocked = [d for d in dims if str(d.get("status", "")) == "불가"]
     if final_verdict in ("가능", "가능(조건부)") and (not basis_seq or blocked):
         why = "인용 근거(basis_seq)가 없다" if not basis_seq else f"'불가' 축({[d.get('dimension') for d in blocked]})이 있는데 종합이 '{final_verdict}'다"
-        return Command(update={"messages": [_tm(
+        return Command(update={"_reject_count": 1, "messages": [_tm(
             f"<tool_use_error>종합판정 거부: {why}. 근거를 달거나, 막힌 축이 있으면 final_verdict를 '확인필요'/'위험·금지'로 다시 커밋하라.</tool_use_error>", tool_call_id)]})
     def _mk(d):
         st = str(d.get("status", "주의"))
@@ -656,7 +656,7 @@ def record_verdict(final_verdict: Annotated[Literal["가능", "가능(조건부)
                             reason=str(d.get("reason", ""))[:200],
                             basis_seq=[s for s in (d.get("basis_seq") or []) if isinstance(s, int)]).model_dump()
     labels = [_mk(d) for d in dims]
-    return Command(update={"verdict_labels": labels, "_llm_verdict": final_verdict, "_toolcalls": ["record_verdict"],
+    return Command(update={"verdict_labels": labels, "_llm_verdict": final_verdict, "_toolcalls": ["record_verdict"], "_reject_count": 0,
                            "messages": [_tm(f"종합판정 기록: {final_verdict} (축 {len(labels)}개)", tool_call_id)]})
 
 
