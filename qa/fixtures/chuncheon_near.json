@@ -714,35 +714,45 @@
      "law_name": null,
      "article": null,
      "effect": "관련 법령 미상 — 규제명으로 직접 확인 필요",
-     "status": "확인필요"
+     "status": "확인필요",
+     "blocking_level": "normal",
+     "basis_seq": []
     },
     {
      "reg_name": "도시지역",
      "law_name": null,
      "article": null,
      "effect": "관련 법령 미상 — 규제명으로 직접 확인 필요",
-     "status": "확인필요"
+     "status": "확인필요",
+     "blocking_level": "normal",
+     "basis_seq": []
     },
     {
      "reg_name": "영농여건불리농지",
      "law_name": null,
      "article": null,
      "effect": "관련 법령 미상 — 규제명으로 직접 확인 필요",
-     "status": "확인필요"
+     "status": "확인필요",
+     "blocking_level": "normal",
+     "basis_seq": []
     },
     {
      "reg_name": "가축사육제한구역",
      "law_name": "가축분뇨의 관리 및 이용에 관한 법률",
      "article": "제8조",
      "effect": "가축사육의 제한 등",
-     "status": "근거확보"
+     "status": "근거확보",
+     "blocking_level": "normal",
+     "basis_seq": []
     },
     {
      "reg_name": "보전녹지지역",
      "law_name": "국토의 계획 및 이용에 관한 법률",
      "article": "제76조",
      "effect": "용도지역 및 용도지구에서의 건축물의 건축 제한 등",
-     "status": "근거확보"
+     "status": "근거확보",
+     "blocking_level": "normal",
+     "basis_seq": []
     }
    ],
    "citations": 5,
