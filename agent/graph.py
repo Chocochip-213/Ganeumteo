@@ -80,6 +80,8 @@ def completeness_guard(state):
     miss = []
     if "get_parcel" not in called:
         miss.append("입지")
+    if state.get("pnu") and "get_building_register" not in called and not (os.environ.get("FORCE_STUB") or os.environ.get("APP_MODE") == "stub"):
+        miss.append("건물대장(work_type)")   # 건물대장 조회 강제(검수 P0) — pnu 있는데 미조회 채 완료 금지(미조회 신축 단정 차단). 조회 결과 반영(건물있음→용도변경)은 프롬프트/LLM 몫(코드 교차검증=하드코딩이라 안 함). stub 면제(품질가드).
     # 의제 누락은 jimok 코드매칭이 아니라 record_uijae 호출여부로 판단(전용 의제 판정은 LLM 몫).
     # 서류 전수검사(아래)가 기록된 의제 stage_key를 need에 합산하므로 의제 커버리지는 거기서 일원 enforce.
     if state.get("pnu") and "record_uijae" not in called:
