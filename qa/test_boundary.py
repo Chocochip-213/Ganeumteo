@@ -1,0 +1,55 @@
+# -*- coding: utf-8 -*-
+"""구조 경계 회귀테스트(U10) — 시나리오 열거가 아니라 구조 불변식만 어서트. offline·결정적.
+마라톤(U1~U9) 다수 편집 후 모듈 경계·도구계약·status-creep·가드집합이 안 깨졌는지 그물."""
+import sys, os, traceback
+os.environ.setdefault("FORCE_STUB", "1")   # 실 LLM 셋업 회피(import만 검증)
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_ROOT, "agent"))
+sys.path.insert(0, os.path.join(_ROOT, "lawlib"))
+
+
+def test_import_boundary():
+    """agent/lawlib 모듈이 순환·깨짐 없이 import(다수 편집 후 import 경계)."""
+    import graph, tools, state, agent, wf_reg_agent, law_fetch  # noqa: F401
+    assert callable(graph.build_graph)
+
+
+def test_tools_command_contract():
+    """모든 @tool이 StructuredTool(name·func) — TOOLS/ToolNode 계약 불변."""
+    import tools
+    assert len(tools.TOOLS) >= 10
+    for t in tools.TOOLS:
+        assert hasattr(t, "name") and hasattr(t, "func"), f"{t!r} @tool 아님"
+    assert set(tools.TOOLS_BY_NAME) == {t.name for t in tools.TOOLS}
+
+
+def test_reg_seed_status_creep():
+    """REG_SEED 라우팅힌트는 영원히 '확인필요'(근거확보 false-grounding 봉쇄). REG_LAW 미매치 kw=fetch 0."""
+    import wf_reg_agent as R
+    seed_only = [s["kw"] for s in R.REG_SEED if not any(t[0] in s["kw"] for t in R.REG_LAW)]
+    assert seed_only, "REG_SEED-only kw 없음(테스트 전제 깨짐)"
+    res = R.resolve(seed_only)   # 전 seed-only kw → seed 분기, 네트워크 0(REG_LAW 미매치). 검수B F1: 첫개만 말고 전수
+    bad = [r for r in res if r["상태"] != "확인필요"]
+    assert res and not bad, f"REG_SEED status-creep: {bad}"
+
+
+def test_record_reject_guard_set():
+    """U1 doom-loop 가드 대상 = 근거없는 단정 거부 도구 3종(record_verdict·ordinance·reg_resolution)."""
+    import graph
+    assert {"record_verdict", "record_ordinance_ruling", "record_reg_resolution"} <= graph._RECORD_TOOLS
+
+
+def main():
+    fns = [test_import_boundary, test_tools_command_contract, test_reg_seed_status_creep, test_record_reject_guard_set]
+    fail = 0
+    for fn in fns:
+        try:
+            fn(); print(f"PASS {fn.__name__}")
+        except Exception as e:
+            fail += 1; print(f"FAIL {fn.__name__}: {e}"); traceback.print_exc()
+    print("BOUNDARY OK" if not fail else f"BOUNDARY FAIL {fail}")
+    return 1 if fail else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
