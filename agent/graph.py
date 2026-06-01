@@ -182,7 +182,9 @@ def build_reasoning(state):
         steps.append(add("규모임계", "연면적/층수 임계", "law"))
     env = state.get("envelope")   # 건폐율·용적률 envelope(가늠치 — verdict 무관) — compute_scale와 분리 키
     if env and env.get("max_building_area") is not None:
-        steps.append(add("규모가늠", f"최대건축면적 {env.get('max_building_area')}㎡·최대연면적 {env.get('max_floor_area')}㎡·약식층수 {env.get('approx_floors')}",
+        _ref = "참고(신축 가정·현재 직접 적용 아님) " if env.get("reference_only") else ""   # U6: LLM-set 플래그만 읽어 정직표시(verdict 입력 아님 — verdict_basis_seq는 행위제한/조례만, 불변)
+        _scope = f" [적용범위:{env.get('area_scope')}]" if env.get("area_scope") else ""
+        steps.append(add("규모가늠", f"{_ref}최대건축면적 {env.get('max_building_area')}㎡·최대연면적 {env.get('max_floor_area')}㎡·약식층수 {env.get('approx_floors')}{_scope}",
                          "law", env.get("envelope_note", "")))
     pr = state.get("parking_req")
     if pr and pr.get("status") == "산출":   # 부설주차 N대(가늠치 — verdict 무관)

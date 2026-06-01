@@ -457,17 +457,20 @@ def compute_scale(floor_area: float, floor_count: int, tool_call_id: Annotated[s
 
 @tool
 def compute_envelope(land_area_m2: float, bcr_pct: float, far_pct: float,
-                     tool_call_id: Annotated[str, InjectedToolCallId], basis_note: str = "") -> Command:
+                     tool_call_id: Annotated[str, InjectedToolCallId], basis_note: str = "",
+                     reference_only: Annotated[bool, Field(description="이 규모가 '참고용 신축 가정 상한'이면 True(예: 용도변경·대수선 — 현재 건물에 직접 적용 아님). 실제 신축이면 False.")] = False,
+                     area_scope: Annotated[str, Field(description="이 규모가 적용되는 면적 범위를 평이하게(예 '변경 대상 약 300㎡', '대지 전체 신축'). 비우면 표시 안 함.")] = "") -> Command:
     """건폐율·용적률 → 최대 건축면적·연면적·약식층수(법 산식만, 결정적).
     산식: 최대건축면적=대지면적×건폐율%, 최대연면적=대지면적×용적률%, 약식층수=연면적/건축면적(상한 가늠).
     **bcr_pct(건폐율%)·far_pct(용적률%)는 인자 — LLM이 law_article_fetch로 국토계획법 시행령 §84/§85 또는 도시계획조례서 읽은 실제치를 전달**(도구에 용도지역→율 하드코딩 없음).
     **basis_note(선택)**: 이 가늠의 근거·한계 꼬리표를 LLM이 직접 작성해 전달(코드가 서술 생성 안 함). 예: 용적률을 법정상한 범위로만 읽었으면 '실제치 확인필요', 용도변경이면 '신축 가정 상한·현재는 직접 적용 아님'. 비우면 표시 안 함.
-    ScaleLimit를 확장(compute_scale와 같은 scale_limits 필드, envelope 3필드 채움)."""
+    별도 envelope 키에 저장(scale_limits와 분리 — 병렬 동시쓰기 충돌 방지). reference_only=True면 참고용(신축 가정 상한 — 용도변경·대수선 등 현재 직접 적용 아님), area_scope로 적용 면적범위 표시."""
     max_bldg = round(land_area_m2 * bcr_pct / 100.0, 1)
     max_floor = round(land_area_m2 * far_pct / 100.0, 1)
     approx = round(max_floor / max_bldg, 1) if max_bldg else None
     env = {"max_building_area": max_bldg, "max_floor_area": max_floor, "approx_floors": approx,
            "envelope_note": basis_note or None,
+           "reference_only": bool(reference_only), "area_scope": str(area_scope) or None,   # U6: 참고용(신축가정) 여부·적용 면적범위 — LLM이 세팅(코드는 work_type 추론 0), 저장·표시만
            "notes": [f"대지 {land_area_m2}㎡ 건폐율 {bcr_pct}% 용적률 {far_pct}%"]}
     return Command(update={"envelope": env, "_toolcalls": ["compute_envelope"],   # scale_limits와 분리 키 — 병렬 동시쓰기 충돌(InvalidUpdateError) 방지
                            "messages": [_tm(f"envelope: 최대건축면적={max_bldg}㎡ 최대연면적={max_floor}㎡ 약식층수≈{approx} (건폐율{bcr_pct}%·용적률{far_pct}%)", tool_call_id)]})
