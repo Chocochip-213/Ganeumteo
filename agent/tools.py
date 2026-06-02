@@ -791,9 +791,15 @@ def record_landuse_resolution(
         if not claims or not ok:
             return Command(update={"_reject_count": 1, "messages": [_tm(
                 f"<tool_use_error>행위제한 '{status}' 단정은 근거(basis_claims) 필수·실재({'근거없음' if not claims else errs[:2]}). 별표1/조례 근거를 달거나 status='확인필요'+unresolved_by로.</tool_use_error>", tool_call_id)]})
-    if status == "확인필요" and ub == "none":
-        return Command(update={"_reject_count": 1, "messages": [_tm(
-            "<tool_use_error>행위제한 '확인필요'는 unresolved_by 분류 필수 — bare 확인필요 금지.</tool_use_error>", tool_call_id)]})
+    if status == "확인필요":
+        if ub == "none":
+            return Command(update={"_reject_count": 1, "messages": [_tm(
+                "<tool_use_error>행위제한 '확인필요'는 unresolved_by 분류 필수 — bare 확인필요 금지.</tool_use_error>", tool_call_id)]})
+        if ub == "authority":   # authority punt 방지(0a) — 관할 재량임을 말하는 법령근거 필수(record_reg_resolution과 일관)
+            ok, _ = validate_basis_claims(state, claims)
+            if not (claims and ok and any(c.get("claim_type") == "authority_discretion" for c in claims)):
+                return Command(update={"_reject_count": 1, "messages": [_tm(
+                    "<tool_use_error>행위제한 unresolved_by=authority는 '관할 심의/재량'임을 말하는 법령근거(claim_type=authority_discretion·evidence_id 실재) 필수. 근거 없으면 agent로 더 조사하라.</tool_use_error>", tool_call_id)]})
     lr = LanduseResolution(intended_use=str(intended_use)[:60], matched_node_desc=str(matched_node_desc)[:120],
                            api_reg_nm=str(api_reg_nm)[:40], status=status, unresolved_by=ub,
                            basis_claims=claims, mismatch_reason=str(mismatch_reason)[:200]).model_dump()
