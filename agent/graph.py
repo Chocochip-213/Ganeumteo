@@ -32,8 +32,8 @@ def _wrap_tool_call(request, execute):
             "_toolcalls": [name]})   # 시도 기록 → 가드·stub 무한 재호출 방지(fail-closed abstain)
 
 
-_STEP_HARDCAP = 24      # agent 방문 하드캡(무한루프 방지)
-_GUARD_BOUNCE_CAP = 19  # 이 이상이면 guard 바운스 중단(진행)
+_STEP_HARDCAP = 44      # agent 방문 하드캡(무한루프 방지). 새 근거계약 흐름(use_class·landuse·work_type·procedure·per-reg resolution)은 단계가 많아 24→44(다중규제 케이스 완주). 폭주는 _reject_count가 별도 차단.
+_GUARD_BOUNCE_CAP = 36  # 이 이상이면 guard 바운스 중단(진행)
 _REJECT_CAP = 3         # record 도구 연속 거부 N회면 doom-loop 조기종료(확인필요). step-cap(over≥36)으로도 종료되나 그 전에 끊어 ~32왕복 낭비차단 + 정직한 종료사유(record_loop). '무한방지'가 아니라 '조기종료'(검수B 실측: U1없이도 36왕복서 step_capped 종료)
 _RECORD_TOOLS = {"record_verdict", "record_ordinance_ruling", "record_reg_resolution",
                  "record_use_classification", "record_landuse_resolution", "record_work_type"}   # 판정/해소/분류 커밋 도구(근거없는 단정 거부→U1 doom-loop 반복추적 대상)
@@ -411,6 +411,13 @@ def abstain(state):
                       "사유": state.get("abstentions") or "근거(citation) 0건",
                       "입지": {"지목": state.get("jimok"), "용도지역": state.get("zone"),
                               "도로접면": state.get("road_side")},
+                      # step_capped·need_human이면 부분진단도 가치 — 모은 결과 노출(빈 진단 아님)
+                      "verdict_labels": (state.get("_verdict_round") if state.get("_verdict_round") is not None else state.get("verdict_labels", [])),
+                      "procedure_steps": sorted([p for p in state.get("procedure_steps", []) if isinstance(p, dict)], key=lambda p: p.get("order", 0)),
+                      "reg_effects": list(_resolved_regs(state).values()),
+                      "landuse_resolution": _latest_landuse(state),
+                      "uijae": state.get("uijae", []),
+                      "documents": [{"stage": d.get("stage_key"), "list_status": d.get("list_status", d.get("status")), "count": d.get("count", 0)} for d in state.get("documents", [])],
                       "citations": len(state.get("citations", []))}}
 
 
