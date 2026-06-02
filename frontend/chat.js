@@ -1238,7 +1238,8 @@ function docCards(card) {
   const uijaeKeys = new Set(arr(card.uijae).map((u) => u && u.stage_key).filter(Boolean));
   // item 17: 모든 제출서류를 동등 카드로 렌더(의제를 주 단계 하위에 강제삽입하지 않음). 의제 stage는 '관련 인허가' chip만 표시.
   let n = 0;
-  return docs.map((d) => docStageCard(d, ++n, uijaeKeys.has(String(d.stage || d.stage_key || "")))).join("");
+  const stages = docs.map((d) => docStageCard(d, ++n, uijaeKeys.has(String(d.stage || d.stage_key || "")))).join("");
+  return `<div class="card card-pad docs-unified">${stages}</div>`;   // 단계 카드 분리감 제거 — 한 패널에 단계별 구획(구분선)으로 통합
 }
 
 function docStageCard(d, num, isUijae) {

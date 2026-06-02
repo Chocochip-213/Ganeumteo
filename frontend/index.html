@@ -65,6 +65,12 @@
   /* ── 서류: 단계 카드 + 호별 체크리스트 + 목 들여쓰기 ── */
   .doc-stage { border: 1px solid var(--border-1); border-radius: 14px; background: var(--bg-surface); overflow: hidden; }
   .doc-stage + .doc-stage { margin-top: 10px; }
+  /* 단계 카드 분리감 제거 — 한 패널 안에서 단계별 구획(구분선)으로 통합 */
+  .docs-unified { padding: 6px 10px; }
+  .docs-unified .doc-stage { border: none; border-radius: 0; background: none; overflow: visible; }
+  .docs-unified .doc-stage + .doc-stage { margin-top: 0; border-top: 1px solid var(--border-1); }
+  .docs-unified .ds-head { padding: 15px 6px 12px; }
+  .docs-unified .ds-items { padding: 0 6px 10px; }
   .ds-head { display: flex; align-items: flex-start; gap: 11px; padding: 14px 16px; }
   .ds-num { width: 28px; height: 28px; border-radius: 999px; background: var(--sky-500); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
   .doc-stage.na .ds-num { background: var(--warm); }
