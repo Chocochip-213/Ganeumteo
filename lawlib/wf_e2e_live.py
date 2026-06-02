@@ -129,7 +129,7 @@ def _S(v):
 def _dl(u,t=4):
     for i in range(t):
         try: return urllib.request.urlopen(urllib.request.Request(u,headers={"User-Agent":"Mozilla/5.0","Connection":"close"}),timeout=40).read()
-        except: time.sleep(1.5)
+        except: time.sleep(1.5*(2**i))   # 지수 backoff(검수 REAL-2 — 고정sleep→1.5·3·6·12s)
     return None
 
 def jorye_rag(sigungu, zone, 용도키워드=("일반음식점","휴게음식점","제2종근린생활","2종근린생활")):

@@ -73,7 +73,7 @@ def _fetch_article(lawnm, jo):
 
 def resolve(reg_names, maxlen=200):
     """규제명 리스트 → 각각 DRF 라이브 조회 → 근거조문 인용 or 기권."""
-    seen, results = set(), []
+    results = []
     for nm in reg_names:
         nm = str(nm or '').strip()
         if not nm: continue
@@ -87,10 +87,7 @@ def resolve(reg_names, maxlen=200):
                 results.append({"규제": nm, "상태": "확인필요", "근거": "관련 법령 미상 — 규제명으로 직접 확인 필요"})
             continue
         _, lawnm, jo = hit
-        if (lawnm, jo) in seen:  # 같은 조문 중복 규제(녹지/도시 등) 1회만
-            continue
-        seen.add((lawnm, jo))
-        art = _fetch_article(lawnm, jo)
+        art = _fetch_article(lawnm, jo)   # _cache 메모이즈로 같은 조문 재fetch=캐시. seen 결과-dedup 제거(같은 법·조 공유 중첩규제 누락 방지 — 검수 REAL-1)
         if not art:
             results.append({"규제": nm, "상태": "확인필요", "근거": f"{lawnm} 제{jo}조 fetch 실패→기권"})
         elif art.get("error"):

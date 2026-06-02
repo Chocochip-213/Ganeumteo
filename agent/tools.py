@@ -238,12 +238,7 @@ def _byeolpyo_body(b):
         return re.sub(r"\s+", " ", inline).strip()
     url = _S(b.get("별표첨부파일명"))                      # 폴백: 첨부파일(.hwp/.hwpx — 도 산하 시·군은 inline 비고 본문 첨부)
     if not url: return None
-    raw = None
-    for _ in range(4):
-        try:
-            raw = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Connection": "close"}), timeout=40).read(); break
-        except Exception:
-            time.sleep(1.5)
+    raw = W._dl(url)   # .hwp 첨부 다운로드(4회 지수backoff) — 동일 자작루프 제거, 공통 헬퍼 재사용(검수 REAL-2)
     full = L.byeolpyo_text(raw)                          # .hwp(PARA_TEXT 레코드)·.hwpx 자동 — 통째 utf-16 디코드 쓰레기 방지
     return re.sub(r"\s+", " ", full).strip() if full else None
 
