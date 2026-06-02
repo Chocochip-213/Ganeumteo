@@ -19,6 +19,8 @@ def fresh_state(address, use_type, floor_area=None, floor_count=None):
         "floor_count": int(floor_count) if floor_count is not None else None, "work_type": "",
         # operator.add 누적 필드 전부 pre-init(미초기화 시 누적 오류 — 검수 검증)
         "reg_overlaps": [], "uijae": [], "documents": [], "cond_assessments": [], "reg_effects": [], "jorye_verdicts": [], "verdict_labels": [], "document_facts": {},
+        # 근거계약·신규 산출(MASTER_PLAN item 0 토대)
+        "evidence_records": {}, "procedure_steps": [], "landuse_resolutions": [], "use_classifications": [], "work_type_resolutions": [],
         "citations": [], "abstentions": [], "_toolcalls": [], "_steps": 0, "_reject_count": 0,
         "_turn_base_steps": 0, "_turn_base_tools": 0,   # per-invoke 하드캡 기준(검수 AF-1/2/3)
     }

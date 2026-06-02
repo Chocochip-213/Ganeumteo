@@ -151,11 +151,16 @@ def _derive_verdict(state):
 
 
 def _resolved_regs(state):
-    """reg_effects를 reg_name별 최신 1엔트리로 정리(record_reg_resolution 해소판정이 reg_effect_resolve_tool fetch 뒤에 와 우선·다라운드 stale 제거). 누적 list라 read-time dedup(reducer 무변경=SqliteSaver 안전). 검수 F1/stale②."""
-    out = {}
+    """reg_effects를 reg_name별 1엔트리. item 2: resolution_committed=True(LLM 영향판정) 우선, 없을 때만 fetch row(근거확보/확인필요).
+    단순 최신이면 fetch row가 LLM 판정을 덮을 수 있어 → committed가 fetch를 덮게(완료 우선). read-time dedup(reducer 무변경=SqliteSaver 안전)."""
+    committed, fetched = {}, {}
     for e in state.get("reg_effects", []):
-        if e.get("reg_name"):
-            out[e["reg_name"]] = e   # 뒤(최신) 우선
+        nm = e.get("reg_name")
+        if not nm:
+            continue
+        (committed if e.get("resolution_committed") else fetched)[nm] = e   # 각자 최신(뒤 우선)
+    out = dict(fetched)
+    out.update(committed)   # committed(영향판정 완료)가 fetch(자료확보)를 덮음
     return out
 
 
@@ -175,7 +180,8 @@ def build_reasoning(state):
     for u in state.get("uijae", []):
         steps.append(add("의제", f"{u['trigger']} → {u['permit_name']}", "law"))
     for r in _resolved_regs(state).values():   # reg_name별 최신(resolution 우선) — fetch+resolution 중복 step 방지(F1)
-        _rok = r.get("status") in ("해소", "해당없음", "근거확보")   # 해소/해당없음/fetch근거=확정, 미해소/확인필요=확인필요
+        # item 12: 근거확보(fetch 자료확보)≠확정. LLM이 record_reg_resolution로 커밋한 해소/해당없음만 확정(resolution_committed). 미커밋·미해소·확인필요=확인필요.
+        _rok = r.get("resolution_committed") and r.get("status") in ("해소", "해당없음")
         steps.append(add("규제효과", r["reg_name"], (r.get("law_name") or "ordin") if _rok else None, r.get("effect", "")))
     sl = state.get("scale_limits")
     if sl:
