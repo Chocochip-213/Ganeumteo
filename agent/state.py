@@ -78,6 +78,8 @@ class DocItem(BaseModel):
     has_proviso: bool = False
     conditional: bool = False          # 해당시만 제출(법 "~경우로 한정" 등)
     item_type: str = "doc"             # doc(제출서류) | group(각 목 헤더) | spec(서류 세부명세) | cross_ref(관계법령 위임=의제서류로 해소)
+    applies_status: Literal["해당", "비해당", "확인필요"] = "확인필요"   # item 5: 이 서류가 이 케이스에 해당하나(목록확보와 분리 — LLM/cond_assess가 판정)
+    unresolved_by: _UNRESOLVED = "none"   # applies_status=확인필요면 누가 푸나(0a enum)
     form_title: str = ""               # 이 호가 별지서식 참조시 양식명
     form_hwp: str = ""                 # 양식 HWP 다운로드 URL
     form_pdf: str = ""                 # 양식 PDF 다운로드 URL
@@ -92,7 +94,8 @@ class StageDocs(BaseModel):
     when_title: str = ""               # 본법 조문제목(=단계 의미)
     when_quote: str = ""               # 본법 조문 원문(hover 인용)
     author_note: str = ""              # 이 단계 작성주체(에이전트가 법령근거로 생성: 신청인/건축사§23/감리자§25)
-    status: str = "전수확보"
+    list_status: str = "확인필요"       # item 5: 법정 제출목록을 다 가져왔나(전수확보/확인필요) — 해당여부(DocItem.applies_status)와 분리. 파싱+항일치 성공만 전수확보
+    status: str = "전수확보"            # (legacy 표시 — list_status 미러; 프론트/compose 호환)
     count: int = 0
     apply_title: str = ""              # 주신청서 양식명
     apply_hwp: str = ""                # 주신청서 HWP 다운로드 URL

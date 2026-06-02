@@ -106,10 +106,12 @@ def docs_for(stage, law_name=None, article=None, hang_override=None):
             # 대상 항 찾기 (항 지정시 그 항, 없으면 조문직속 호 또는 첫 항)
             target_ho = []
             hangs = _AL(u.get('항'))
+            _hang_ok = True   # item 5: 명시 hang이 실제 매칭됐나 — 불일치면 fallback이라 전수확보 금지(엉뚱 조문 오판 방지)
             if hang:
+                _hang_ok = False
                 for h in hangs:
                     if isinstance(h, dict) and h.get('항번호') == hang:
-                        target_ho = _AL(h.get('호')); break
+                        target_ho = _AL(h.get('호')); _hang_ok = True; break
             if not target_ho:  # 항 미지정/미발견: 조문 직속 호, 없으면 '호를 가진 첫 항'(농지 §26처럼 ②항에 서류 있는 경우 대응)
                 target_ho = _AL(u.get('호'))
                 if not target_ho:
@@ -147,8 +149,10 @@ def docs_for(stage, law_name=None, article=None, hang_override=None):
                                     "단서있음": '다만' in mtxt, "조건부": ho_cond or _is_cond(mtxt),
                                     "서식": _ref_form(mtxt, forms),
                                     "유형": "cross_ref" if _is_xref(mtxt) else mok_type})
+            _st = "확인필요" if (hang and not _hang_ok) else "전수확보"   # item 5: 명시 항 불일치 fallback은 확정(전수확보) 금지
             return {"단계": stage, "법령": lawnm, "조": f"제{jo_num}조" + (f"의{jo_ga}" if jo_ga else "") + (hang or ''),
-                    "상태": "전수확보", "건수": len(서류), "신청서": 신청서, "서류": 서류, **_when(stage)}
+                    "상태": _st, "사유": (f"명시 항 '{hang}' 불일치 — fallback 수집(확정 아님)" if _st == "확인필요" else ""),
+                    "건수": len(서류), "신청서": 신청서, "서류": 서류, **_when(stage)}
     return {"단계": stage, "상태": "확인필요", "사유": f"제{jo_num}조{('의' + jo_ga) if jo_ga else ''} 조문 못찾음"}
 
 if __name__ == "__main__":

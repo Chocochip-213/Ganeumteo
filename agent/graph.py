@@ -36,7 +36,7 @@ _STEP_HARDCAP = 24      # agent 방문 하드캡(무한루프 방지)
 _GUARD_BOUNCE_CAP = 19  # 이 이상이면 guard 바운스 중단(진행)
 _REJECT_CAP = 3         # record 도구 연속 거부 N회면 doom-loop 조기종료(확인필요). step-cap(over≥36)으로도 종료되나 그 전에 끊어 ~32왕복 낭비차단 + 정직한 종료사유(record_loop). '무한방지'가 아니라 '조기종료'(검수B 실측: U1없이도 36왕복서 step_capped 종료)
 _RECORD_TOOLS = {"record_verdict", "record_ordinance_ruling", "record_reg_resolution",
-                 "record_use_classification", "record_landuse_resolution"}   # 판정/해소/분류 커밋 도구(근거없는 단정 거부→U1 doom-loop 반복추적 대상)
+                 "record_use_classification", "record_landuse_resolution", "record_work_type"}   # 판정/해소/분류 커밋 도구(근거없는 단정 거부→U1 doom-loop 반복추적 대상)
 
 
 def _norm_ho(ho):
@@ -194,6 +194,12 @@ def _latest_landuse(state):
     return lrs[-1] if lrs else None
 
 
+def _latest_work_type(state):
+    """record_work_type 최신 확정 WorkTypeResolution(맹지/절차 게이트가 읽는 단일원, item 9·0d). 없으면 None(보수적). 코드는 raw work_type/문자열 추론 안 봄."""
+    wts = [w for w in (state.get("work_type_resolutions") or []) if isinstance(w, dict)]
+    return wts[-1] if wts else None
+
+
 def _convert_agent_unresolved(state):
     """0g: 스텝캡 도달시 agent(더 조사 가능했으나 캡 소진) → tool_budget_exhausted 변환(무한루프 차단·정직 표시).
     reg_effects=새 row append(committed selector가 최신 집음), verdict_labels=_verdict_round 재구성(last-write-wins). 기존 row 수정 아님(append-only)."""
@@ -294,16 +300,17 @@ def build_reasoning(state):
             verdict = "확인필요"
             out.setdefault("abstentions", []).append({"node": "build_reasoning", "gate": "truncated_basis", "사유": "조례 '가능' 판정 근거 별표가 끝까지 안 읽힘(완독창 없음) — offset으로 이어읽거나 더 좁은 별표로 전문 확인 필요(확인필요)"})
     # 선결조건(접도) fail-closed: 맹지(도로 미접)는 신축의 기본 선결(건축법§44 접도의무). 도로지정·사도개설(§45/사도법)로
-    #  해소 가능성이 record_uijae로 검토되지 않은 채 '가능'이면 신축 성립 자체가 불확실 → 확인필요 보류(거짓 가능 방지).
-    #  용도변경 등 비신축은 새 접도의무가 생기지 않으므로 제외(doc_stages로 신축 여부 판별 — work_type 가정 안 함).
+    #  해소 가능성이 검토되지 않은 채 '가능'이면 신축 성립 자체가 불확실 → 확인필요 보류(거짓 가능 방지).
+    #  item 9: 신축 여부 판별을 doc_stages substring이 아니라 구조화 WorkTypeResolution으로(문자열 추론 금지·LLM 커밋값). 미확정=보수적(선결 적용).
     if state.get("road_side") == "맹지" and verdict in ("가능", "가능(조건부)", "조건부"):
-        _ds = {d.get("stage_key") for d in state.get("documents", [])}
-        _is_sinchuk = ("건축허가" in _ds) or not (_ds & {"용도변경", "대수선"})
+        _wt = _latest_work_type(state)
+        _wtype = (_wt or {}).get("work_type") if (_wt and _wt.get("status") == "확정") else None
+        _is_newbuild = (_wtype in ("신축", "증축")) or _wtype is None   # 신축/증축=접도선결, 용도변경/대수선/해체=면제, 미확정=fail-closed
         _road_resolved = bool({u.get("stage_key") for u in state.get("uijae", [])} & {"사도개설", "도로지정"})
-        if _is_sinchuk and not _road_resolved:
+        if _is_newbuild and not _road_resolved:
             verdict = "확인필요"
             out.setdefault("abstentions", []).append({"node": "build_reasoning", "gate": "no_road_access",
-                "사유": "맹지(도로 미접) — 신축은 건축법§44 접도의무가 선결. 도로지정·사도개설(§45/사도법) 가능성 미검토 → 사람검토 필요"})
+                "사유": "맹지(도로 미접) — 신축/증축은 건축법§44 접도의무가 선결. 도로지정·사도개설(§45/사도법) 가능성 미검토 → 사람검토 필요(work_type 미확정시 보수적 적용)"})
     # 근거 seq = 판정 방향에 맞는 단계만(검수 #5): 긍정이면 '가능' 단계, 확인필요/금지면 '막은/불확실' 단계
     if verdict in ("가능", "가능(조건부)", "조건부"):
         _basis = [s["seq"] for s in steps if s["kind"] in ("행위제한", "조례호목해소") and s.get("status") != "확인필요"]
@@ -348,6 +355,7 @@ def compose(state):
         "legal_reasoning": state.get("legal_reasoning"),
         "uijae": state.get("uijae"),
         "documents": [{"stage": d["stage_key"], "count": d.get("count", 0), "status": d["status"],
+                       "list_status": d.get("list_status", d.get("status")),   # item 5: 목록확보(해당여부는 items[].applies_status)
                        "law": d.get("law", ""), "article": d.get("article", ""),
                        "when_note": d.get("when_note", ""), "when_law": d.get("when_law", ""),
                        "when_title": d.get("when_title", ""), "when_quote": d.get("when_quote", ""),

@@ -405,9 +405,9 @@ def docs_for_stage(stage_key: str, when_note: str = "", author_note: str = "", l
     when_note: 이 단계를 '언제' 하는지 한 줄(예 '공사 착수 직전 신고', '완료 후 사용 전 신청'). 건축법 절차 근거로 생성. 의제 단계면 '건축허가 시 함께 의제처리'. 모르면 빈 문자열.
     author_note: 작성주체를 법령근거로 한 줄(예 '신청인 본인; 설계도서는 건축사-건축법§23'·'감리완료보고서는 감리자-§25'). 법으로 판단(키워드 추측 금지). 모르면 빈 문자열."""
     r = DOC.docs_for(stage_key, law_name=law_name or None, article=article or None, hang_override=hang or None)
-    if r["상태"] != "전수확보":
-        return Command(update={"documents": [StageDocs(stage_key=stage_key, status="확인필요").model_dump()],
-                               "_toolcalls": ["docs_for_stage"], "messages": [_tm(f"{stage_key} 서류 확인필요", tool_call_id)]})
+    if r["상태"] != "전수확보":   # item 5: 미파싱·항불일치 fallback → list_status=확인필요(전수확보 오판 차단)
+        return Command(update={"documents": [StageDocs(stage_key=stage_key, list_status="확인필요", status="확인필요").model_dump()],
+                               "_toolcalls": ["docs_for_stage"], "messages": [_tm(f"{stage_key} 서류 확인필요({r.get('사유', '')})", tool_call_id)]})
     items = [DocItem(ho=d["호"], doc_name=d["서류"], has_proviso=d["단서있음"],
                      conditional=d.get("조건부", False), item_type=d.get("유형", "doc"),
                      form_title=(d.get("서식") or {}).get("제목", ""),
@@ -416,26 +416,32 @@ def docs_for_stage(stage_key: str, when_note: str = "", author_note: str = "", l
     af = r.get("신청서") or {}
     sd = StageDocs(stage_key=stage_key, law=r["법령"], article=r["조"], count=r["건수"],
                    when_note=when_note, when_law=r.get("when_law", ""), when_title=r.get("when_title", ""),
-                   when_quote=r.get("when_quote", ""), author_note=author_note,
+                   when_quote=r.get("when_quote", ""), author_note=author_note, list_status="전수확보", status="전수확보",
                    apply_title=af.get("제목", ""), apply_hwp=af.get("hwp", ""), apply_pdf=af.get("pdf", ""),
                    items=items).model_dump()
+    # item 6: 문서 출처 EvidenceRecord 적재(절차/verdict가 이 doc 법조를 근거로 인용 가능 — evidence_id=law:<법령>|<조>)
+    _deid = _ev_id("law", f"{r['법령']}|{r['조']}", stage_key)
+    _drec = {_deid: _ev_record(_deid, "law", " · ".join(f"{d['호']} {d['서류']}" for d in r["서류"]), law_id=r['법령'])}
     # 조건부(해당시만 제출) 최상위 호만 추출 — 에이전트가 케이스로 판정하도록 ToolMessage에 노출(목은 부모 호에 포함)
     cond_top = [f"{it['ho']} {it['doc_name'][:24]}" for it in items
                 if it.get("conditional") and not any(c in it["ho"] for c in "가나다라마바사아자차카타파하")]
     msg = f"{stage_key} 첨부 {r['건수']}호 전수({r['법령']} {r['조']})"
     if cond_top:
         msg += " · 조건부(해당시만, 케이스 판정 필요 — assess_conditional_docs): " + "; ".join(cond_top)
-    return Command(update={"documents": [sd], "_toolcalls": ["docs_for_stage"],
-                           "messages": [_tm(msg, tool_call_id)]})
+    return Command(update={"documents": [sd], "evidence_records": _drec, "_toolcalls": ["docs_for_stage"],
+                           "messages": [_tm(msg + f" (근거ID:{_deid})", tool_call_id)]})
 
 
 @tool
-def assess_conditional_docs(assessments: list, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+def assess_conditional_docs(assessments: list, state: Annotated[dict, InjectedState] = None,
+                            tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
     """조건부('해당 시에만 제출') 서류를 케이스로 판정해 기록(docs_for_stage가 ToolMessage에 알려준 조건부 호마다 1건).
-    assessments=[{stage_key, ho, applies, reason}].
+    assessments=[{stage_key, ho, applies, reason, basis_claims, unresolved_by}].
       applies: 'yes'(해당=제출 필요) | 'no'(비해당=제출 불요) | 'unknown'(판단불가→확인필요).
-      판정법: 이미 확보한 사실(지목·용도지역·의제·면적·소유형태 등)로 판정되면 그걸로 결정. 사용자만 아는 사실(공동소유 여부·사전결정 신청 여부 등)이 필요하면 먼저 request_human_input으로 평이하게 묻고(여러 개면 한 번에 묶어) 그 답으로 판정. 끝내 모르면 'unknown'.
-      reason: 판정 근거 한 줄(사용자가 읽을 평이한 말; 법 조문이름 나열 금지)."""
+      **비해당(no)은 근거(basis_claims) 필수·실재**(필수서류를 근거 없이 빼면 안 됨 — 없으면 unknown 강등). 해당(yes)은 안전(서류 포함)이라 근거 권장.
+      판정법: 확보한 사실(지목·용도지역·의제·면적·소유형태)로 판정. 사용자만 아는 사실이면 request_human_input 먼저. 끝내 모르면 unknown+unresolved_by.
+      reason: 평이한 한 줄(법 조문이름 나열 금지)."""
+    state = state or {}
     rows = []
     for a in (assessments or []):
         if not isinstance(a, dict):
@@ -443,8 +449,18 @@ def assess_conditional_docs(assessments: list, tool_call_id: Annotated[str, Inje
         ap = str(a.get("applies", "unknown")).lower()
         if ap not in ("yes", "no", "unknown"):
             ap = "unknown"
+        claims = [c for c in (a.get("basis_claims") or []) if isinstance(c, dict)]
+        ub = a.get("unresolved_by", "none"); ub = ub if ub in _UNRESOLVED_VALUES else "none"
+        if ap == "no":   # 비해당(서류 제외)=결론 → 근거 필수·실재. 없으면 unknown 강등(근거 없는 서류 누락 방지)
+            ok, _ = validate_basis_claims(state, claims)
+            if not (claims and ok):
+                ap = "unknown"
+                if ub == "none":
+                    ub = "agent"
+        if ap == "unknown" and ub == "none":
+            ub = "agent"
         rows.append({"stage_key": str(a.get("stage_key", "")), "ho": str(a.get("ho", "")),
-                     "applies": ap, "reason": str(a.get("reason", ""))[:200]})
+                     "applies": ap, "reason": str(a.get("reason", ""))[:200], "unresolved_by": ub, "basis_claims": claims})
     return Command(update={"cond_assessments": rows, "_toolcalls": ["assess_conditional_docs"],
                            "messages": [_tm(f"조건부 서류 {len(rows)}건 판정", tool_call_id)]})
 
@@ -689,6 +705,33 @@ def record_use_classification(
 
 
 @tool
+def record_work_type(
+        work_type: Annotated[Literal["신축", "용도변경", "대수선", "증축", "해체", "확인필요"], Field(description="공사 종류. get_building_register(기존건물 유무)·사용자 답변을 종합해 판단(빈땅→신축, 기존건물 용도만 변경→용도변경 등).")],
+        basis_claims: Annotated[list, Field(description="근거계약 [{field_path,claim_type,evidence_id,...}]. status=확정은 필수·실재(건축물대장 api evidence는 claim_type=factual_input, 사용자답변은 user_fact). 접도(맹지)·절차 게이트가 이 커밋값만 읽는다.")] = None,
+        status: Annotated[Literal["확정", "확인필요"], Field(description="확정=근거로 work_type 확정. 확인필요=모호(unresolved_by 동반).")] = "확인필요",
+        unresolved_by: Annotated[Literal["none", "agent", "user", "authority", "data_unavailable"], Field(description="확인필요면 누가 푸나(보통 user=빈땅/기존건물 사실).")] = "none",
+        state: Annotated[dict, InjectedState] = None,
+        tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
+    """공사 종류(신축/용도변경/대수선/증축/해체)를 구조화 커밋 — 접도(맹지)·절차 게이트가 읽는 단일원(코드는 raw work_type/document_facts 문자열 추론 안 함).
+    status=확정은 근거(basis_claims) 필수·실재(건축물대장·사용자 답변). 확인필요는 unresolved_by 분류."""
+    state = state or {}
+    claims = [c for c in (basis_claims or []) if isinstance(c, dict)]
+    ub = unresolved_by if unresolved_by in _UNRESOLVED_VALUES else "none"
+    wt = work_type if work_type in ("신축", "용도변경", "대수선", "증축", "해체", "확인필요") else "확인필요"
+    if status == "확정":
+        ok, errs = validate_basis_claims(state, claims)
+        if not claims or not ok:
+            return Command(update={"_reject_count": 1, "messages": [_tm(
+                f"<tool_use_error>work_type '확정'은 근거(basis_claims) 필수·실재({'근거없음' if not claims else errs[:2]}). 건축물대장(get_building_register) 또는 사용자 답변(user_fact) 근거로 커밋하거나 status='확인필요'+unresolved_by로.</tool_use_error>", tool_call_id)]})
+    if status == "확인필요" and ub == "none":
+        ub = "user"   # work_type은 보통 사용자만 아는 사실(빈땅/기존건물)
+    wtr = WorkTypeResolution(work_type=wt, status=status if status in ("확정", "확인필요") else "확인필요",
+                             unresolved_by=ub, basis_claims=claims).model_dump()
+    return Command(update={"work_type_resolutions": [wtr], "_toolcalls": ["record_work_type"], "_reject_count": 0,
+                           "messages": [_tm(f"공사종류 기록: {wt} ({status}{'/'+ub if ub != 'none' else ''})", tool_call_id)]})
+
+
+@tool
 def record_landuse_resolution(
         intended_use: str, matched_node_desc: str, api_reg_nm: str,
         status: Annotated[Literal["가능", "불가", "조건필요", "확인필요"], Field(description="행위제한 판정. 가능=별표1/조례 근거로 허용. 불가=금지. 조건필요=조건부. 확인필요=세목불일치·근거불충분(unresolved_by 동반).")],
@@ -919,6 +962,6 @@ TOOLS = [geocode, get_parcel, get_building_register, get_building_floors, get_la
          ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
          compute_envelope, normalize_area, parking_quota, levy_estimate,
          author_rule_tool, reg_effect_resolve_tool, record_uijae, record_reg_resolution, record_ordinance_ruling, record_verdict,
-         record_use_classification, record_landuse_resolution, record_procedure_steps,
+         record_use_classification, record_landuse_resolution, record_procedure_steps, record_work_type,
          request_human_input]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}
