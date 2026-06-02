@@ -685,7 +685,7 @@ def procedure_framework_tool(tool_call_id: Annotated[str, InjectedToolCallId] = 
     사용법: 이 목록의 각 단계마다 ①articles를 law_article_fetch로 읽어 근거확보(근거ID 획득) →
     ②이 케이스 applies(yes/no/unknown)를 네가 판정 → ③의제(record_uijae)는 '건축허가' 단계에 when_note로
     결합 → ④record_procedure_steps(steps=[...])로 커밋. 해당없는 단계도 applies=no(근거와 함께)로
-    빠짐없이 넣어라(누락 금지). 허가/신고/용도변경은 work_type따라 택일(둘 다 넣지 말 것)."""
+    빠짐없이 넣어라(누락 금지). 단 같은 시점 택일 슬롯(건축허가/건축신고/용도변경/대수선)은 work_type에 맞는 하나만 — 나머지 택일지는 applies=no로도 넣지 말고 드롭('빠짐없이'는 순차 단계에만)."""
     fr = PROC.frame()
     lines = [f"{f['order']:>2}. {f['step_id']}({f['stage_key']}) — 근거: {f['law']} "
              f"제{'·'.join(f['articles'])}조 | 조건: {f['gate_hint']} | 서류단계:{f['is_doc_stage']}"
