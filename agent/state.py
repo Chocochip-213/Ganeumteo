@@ -284,12 +284,15 @@ def validate_basis_claims(state, basis_claims, *, require_quote=True):
         ct = c.get("claim_type", "factual_input")
         if not _claim_kind_ok(ct, eid):
             errors.append((i, f"claim_type×evidence-kind 위반:{ct}↔{_evidence_kind(eid)}")); continue
-        if require_quote:
+        if require_quote and _evidence_kind(eid) in ("law", "ordin"):
+            # quote 실재 = 법령/조례(verbatim 인용원)만 엄격. api/user_fact/doc_fact/static은 서술 근거(verbatim 아님)라 존재성만(quote 면제).
             q = (c.get("quote_or_span") or "").strip()
             rec = recs.get(eid)
             raw = (rec.get("raw_text") if isinstance(rec, dict) else "") or ""
-            if q and raw and q not in raw:   # raw 보유 evidence만 quote 실재 대조(user_fact/doc_fact는 raw 없어 면제)
-                errors.append((i, f"quote 원문 미실재:{eid}"))
+            if q and raw:
+                qn = "".join(q.split()); rn = "".join(raw.split())   # 공백 무시 비교(표시 정규화 차 흡수 — 위조는 여전히 미매치라 차단)
+                if qn and qn not in rn:
+                    errors.append((i, f"quote 원문 미실재:{eid}"))
     return (not errors, errors)
 
 

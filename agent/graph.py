@@ -90,7 +90,7 @@ def completeness_guard(state):
     # 의제 누락은 jimok 코드매칭이 아니라 record_uijae 호출여부로 판단(전용 의제 판정은 LLM 몫).
     # 서류 전수검사(아래)가 기록된 의제 stage_key를 need에 합산하므로 의제 커버리지는 거기서 일원 enforce.
     if state.get("pnu") and "record_uijae" not in called:
-        miss.append("의제")
+        miss.append("의제(record_uijae 호출 — 없으면 items=[]로)")
     if state.get("_delegated") and "ordin_byeolpyo_fetch" not in called:
         miss.append("조례별표")
     if state.get("reg_overlaps") and "reg_effect_resolve_tool" not in called:
@@ -99,7 +99,7 @@ def completeness_guard(state):
     if state.get("pnu"):   # substantive diagnosis(입지 확보)에서만 절차/완료 게이트 — geocode 실패·잡담은 면제(item 10 조건부)
         # item 10: 절차판정 선행(신축3단계 기본값 제거) — record_procedure_steps 없으면 절차 누락(비신축 신축흐름 강제 안 함)
         if "record_procedure_steps" not in called:
-            miss.append("절차판정")
+            miss.append("절차판정(record_procedure_steps 호출 — 인허가 단계 타임라인)")
         # 서류 = 적용 절차(requires_documents=true) + 의제 stage만 요구(신축 가정 제거). list_status=전수확보만 커버(실패=미커버).
         proc = [p for p in state.get("procedure_steps", []) if isinstance(p, dict) and p.get("applies") != "no"]
         doc_stages = {d.get("stage_key") for d in state.get("documents", []) if d.get("list_status", d.get("status")) == "전수확보"}
@@ -127,7 +127,7 @@ def completeness_guard(state):
             _lr = _resolved_regs(state)
             _miss_reg = [r for r in state["reg_overlaps"] if r and not (_lr.get(r) or {}).get("resolution_committed")]
             if _miss_reg:
-                miss.append("규제해소:" + ",".join(str(r) for r in _miss_reg[:5]))
+                miss.append("규제해소(record_reg_resolution로 각 규제 판정):" + ",".join(str(r) for r in _miss_reg[:5]))
         # §0 2b: agent-미해결 루프백 — reg_effects/verdict_labels에 unresolved_by=agent 남으면 더 조사 강제(stub 면제). 최종 카드 잔존은 user/authority/data_unavailable/tool_budget_exhausted만.
         if not _is_stub:
             _vl = state.get("_verdict_round") if state.get("_verdict_round") is not None else state.get("verdict_labels", [])

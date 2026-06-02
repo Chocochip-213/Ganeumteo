@@ -30,10 +30,10 @@ def _ev_id(source, head, *parts):
 
 
 def _ev_record(eid, source, raw, **meta):
-    """EvidenceRecord dict(state evidence_records에 적재 — quote 실재검증 토대). content_hash 자동, raw 캡 4000."""
+    """EvidenceRecord dict(state evidence_records에 적재 — quote 실재검증 토대). content_hash 자동, raw 캡 16000(별표 본문 ~12k 커버)."""
     raw = str(raw or "")
     allowed = {k: v for k, v in meta.items() if k in EvidenceRecord.model_fields}
-    return EvidenceRecord(evidence_id=eid, source=source, raw_text=raw[:4000],
+    return EvidenceRecord(evidence_id=eid, source=source, raw_text=raw[:16000],
                           content_hash=hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:16],
                           **allowed).model_dump()
 
@@ -101,11 +101,14 @@ def get_parcel(x: float, y: float, tool_call_id: Annotated[str, InjectedToolCall
                or [t for t in toks if t.endswith("구")] or [""])[0]
     road = W.dig(pc, "roadSideCodeNm")
     road = road[0] if road else None
+    _peid = _ev_id("api", "parcel", pnu)   # item 0b: 필지 EvidenceRecord(지목·도로접면 근거)
+    _pmsg = f"지목 {jimok}, 도로접면 {road}, 시군구 {sigungu}, PNU {pnu}"
     cite = Citation(source="vworld", title="지적(필지) 정보 — 국토교통부 연속지적도",
-                    quote=f"지목 {jimok}" + (f", 도로접면 {road}" if road else "")).model_dump()
+                    quote=f"지목 {jimok}" + (f", 도로접면 {road}" if road else ""), source_id=_peid).model_dump()
     return Command(update={"pnu": pnu, "area_cd": pnu[:5], "jimok": jimok, "sigungu": sigungu,
-                           "road_side": road, "citations": [cite], "_toolcalls": ["get_parcel"],
-                           "messages": [_tm(f"PNU={pnu} 행정코드={pnu[:5]} 지목={jimok} 도로접면={road} 시군구={sigungu} ({addr})", tool_call_id)]})
+                           "road_side": road, "citations": [cite], "evidence_records": {_peid: _ev_record(_peid, "api", _pmsg)},
+                           "_toolcalls": ["get_parcel"],
+                           "messages": [_tm(f"PNU={pnu} 행정코드={pnu[:5]} 지목={jimok} 도로접면={road} 시군구={sigungu} ({addr}) (근거ID:{_peid})", tool_call_id)]})
 
 
 @tool
@@ -122,9 +125,11 @@ def get_land_use(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> 
         land_area = float(raw_area) if raw_area not in (None, "", "0") else None
     except (TypeError, ValueError):
         land_area = None
+    _leid = _ev_id("api", "land_use", pnu)   # item 0b: 용도지역·규제중첩 EvidenceRecord
     upd = {"zone": zone, "zone_ucodes": uq, "reg_overlaps": regs,
+           "evidence_records": {_leid: _ev_record(_leid, "api", f"용도지역 {zone}, 대지면적 {land_area}㎡, 도로접면 {road}, 규제중첩 {regs}")},
            "_toolcalls": ["get_land_use"],
-           "messages": [_tm(f"용도지역={zone} 대지면적={land_area}㎡ 도로접면={road} UQ(전부 콤마로 이어 act_landuse에 그대로)={','.join(uq)} 규제={regs}", tool_call_id)]}
+           "messages": [_tm(f"용도지역={zone} 대지면적={land_area}㎡ 도로접면={road} UQ(전부 콤마로 이어 act_landuse에 그대로)={','.join(uq)} 규제={regs} (근거ID:{_leid})", tool_call_id)]}
     if road is not None:   # 도로접면 None이면 get_parcel이 잡은 값(맹지 등)을 덮어쓰지 않음 — 맹지 fail-closed 보존(last-write-wins 버그 차단)
         upd["road_side"] = road
     if land_area is not None:
@@ -145,7 +150,10 @@ def get_land_price(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -
         if ym and pm and int(pm.group(1)) > 0:
             pairs.append((int(ym.group(1)), int(pm.group(1))))
     p = max(pairs)[1] if pairs else None          # 기준연도 desc 정렬 후 최신값
-    upd = {"_toolcalls": ["get_land_price"], "messages": [_tm(f"공시지가={p}원/㎡", tool_call_id)]}
+    _pid = _ev_id("api", "land_price", pnu)   # item 0b: 공시지가 EvidenceRecord(부담금 근거)
+    upd = {"_toolcalls": ["get_land_price"],
+           "evidence_records": {_pid: _ev_record(_pid, "api", f"개별공시지가 {p}원/㎡ (PNU {pnu})")},
+           "messages": [_tm(f"공시지가={p}원/㎡ (근거ID:{_pid})", tool_call_id)]}
     if p is not None:
         upd["land_price"] = p
     else:
@@ -277,7 +285,8 @@ def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, I
         cite = Citation(source="ordin", law_name=hit["ordin_name"], article=art,
                         quote=body[:110], extract_method="인덱스청크").model_dump()
         cite = _mark_trunc(cite, len(body), 12000, offset)
-        return Command(update={"citations": [cite], "_delegated": True, "doc_index_hit": True,
+        _iev = {cite["source_id"]: _ev_record(cite["source_id"], "ordin", body[offset:offset + 12000], truncated=cite.get("truncated"), read_coverage=cite.get("read_coverage"))}
+        return Command(update={"citations": [cite], "evidence_records": _iev, "_delegated": True, "doc_index_hit": True,
                                "_toolcalls": ["ordin_byeolpyo_fetch"],
                                "messages": [_tm(f"[조례 별표 BodyText(인덱스):{art}] (근거ID:{cite['source_id']})\n{body[offset:offset+12000]}" + ("" if (offset + 12000) >= len(body) else f"\n\n…[{len(body)}자 중 {offset}~{offset+12000}자 표시. 이후 {len(body)-(offset+12000)}자 더 — 같은 인자에 offset={offset+12000} 넣어 이어읽어라(끝까지 안 읽고 단정하면 강등). 못 찾으면 확인필요]"), tool_call_id)]})
     # ── 라이브 폴백(기존 경로 — 불변) ──
@@ -291,7 +300,8 @@ def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, I
                     extract_method="BodyText").model_dump()
     # 멀티홉 본문을 ToolMessage로 → (실 LLM) agent가 호목참조 읽고 다음 홉 결정
     cite = _mark_trunc(cite, len(text), 12000, offset)
-    return Command(update={"citations": [cite], "_delegated": True, "doc_index_hit": False, "_toolcalls": ["ordin_byeolpyo_fetch"],
+    _oev = {cite["source_id"]: _ev_record(cite["source_id"], "ordin", text[offset:offset + 12000], truncated=cite.get("truncated"), read_coverage=cite.get("read_coverage"))}   # item 13b: 조례 별표 raw 적재(quote 실재검증)
+    return Command(update={"citations": [cite], "evidence_records": _oev, "_delegated": True, "doc_index_hit": False, "_toolcalls": ["ordin_byeolpyo_fetch"],
                            "messages": [_tm(f"[조례 별표 BodyText:{meta['별표']}] (근거ID:{cite['source_id']})\n{text[offset:offset+12000]}" + ("" if (offset + 12000) >= len(text) else f"\n\n…[{len(text)}자 중 {offset}~{offset+12000}자 표시. 이후 {len(text)-(offset+12000)}자 더 — 같은 인자에 offset={offset+12000} 넣어 이어읽어라(끝까지 안 읽고 단정하면 강등). 못 찾으면 확인필요]"), tool_call_id)]})
 
 
@@ -325,7 +335,8 @@ def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[
             cite = _mark_trunc(Citation(source="law", law_name=law_name, article=f"별표 {_bno}", quote=_S(b.get("별표제목"))[:60]).model_dump(), len(t), 20000, offset)
             body = t[offset:offset+20000]   # 별표 본문 창(건축법 별표1 ~11k자 — 보통 한 창에 다 들어옴). 호 파싱 휴리스틱 안 씀, LLM이 원문 직접 읽음
             tail = "" if (offset + 20000) >= len(t) else f"\n\n…[{len(t)}자 중 {offset}~{offset+20000}자 표시. 이후 {len(t)-(offset+20000)}자 더 — 같은 인자에 offset={offset+20000} 넣어 이어읽거나 더 좁은 별표 번호/제목으로 재호출. 끝까지 안 읽고 단정하면 강등, 못 찾으면 확인필요]"
-            return Command(update={"citations": [cite], "_toolcalls": ["law_byeolpyo_fetch"],
+            _bev = {cite["source_id"]: _ev_record(cite["source_id"], "law", body, law_id=law_name, truncated=cite.get("truncated"), read_coverage=cite.get("read_coverage"))}   # item 13b: 법령 별표 raw(별표1 용도분류 등 — quote 실재검증)
+            return Command(update={"citations": [cite], "evidence_records": _bev, "_toolcalls": ["law_byeolpyo_fetch"],
                                    "messages": [_tm(f"[{law_name} {byeolpyo_kw}] (근거ID:{cite['source_id']})\n{body}{tail}", tool_call_id)]})
     cands = [(_S(b.get("별표번호")), _S(b.get("별표제목"))[:30]) for b in bu if isinstance(b, dict)]   # 형제(law_article_fetch)와 동일 — 후보 돌려줘 LLM 재호출
     return Command(update={"_toolcalls": ["law_byeolpyo_fetch"],
@@ -409,7 +420,8 @@ def law_article_fetch(law_name: str, article: str, tool_call_id: Annotated[str, 
         label = f"제{jono}조" + (f"의{branch}" if branch else "")
         cite = _mark_trunc(Citation(source="law", law_name=law_name, article=f"{label}({title})" if title else label,
                         quote=full[:200]).model_dump(), len(full), 7000, offset)
-        return Command(update={"citations": [cite], "_toolcalls": ["law_article_fetch"],
+        _aev = {cite["source_id"]: _ev_record(cite["source_id"], "law", full[offset:offset + 7000], law_id=law_name, truncated=cite.get("truncated"), read_coverage=cite.get("read_coverage"))}   # item 13b: 법령 조문 raw(quote 실재검증)
+        return Command(update={"citations": [cite], "evidence_records": _aev, "_toolcalls": ["law_article_fetch"],
                                "messages": [_tm(f"[{law_name} {label}{('('+title+')') if title else ''}] (근거ID:{cite['source_id']})\n{full[offset:offset+7000]}" + ("" if (offset + 7000) >= len(full) else f"\n\n…[{len(full)}자 중 {offset}~{offset+7000}자 표시. 이후 {len(full)-(offset+7000)}자 더 — 같은 인자에 offset={offset+7000} 넣어 이어읽거나 항·호를 좁혀 재호출. 끝까지 안 읽고 단정하면 강등, 못 찾으면 확인필요]"), tool_call_id)]})
     return Command(update={"_toolcalls": ["law_article_fetch"],
                            "messages": [_tm(f"'{law_name}' 제{jono}조{('의'+branch) if branch else ''} 조문 못찾음(번호 확인 후 재시도).", tool_call_id)]})
@@ -982,8 +994,11 @@ def get_building_register(pnu: str, tool_call_id: Annotated[str, InjectedToolCal
     else:
         msg = f"건물 존재 여부 미확인 — {r.get('사유','')}. **빈땅으로 단정하지 말 것**(사용자에게 확인하거나 '미확인'으로)."
         fact = "기존 건물 존재 미확인"
-    return Command(update={"document_facts": {"기존건물": fact}, "_toolcalls": ["get_building_register"],
-                           "messages": [_tm(msg, tool_call_id)]})
+    _beid = _ev_id("api", "building_register", pnu)   # item 0b: 건축물대장 EvidenceRecord(work_type 근거로 인용 가능)
+    return Command(update={"document_facts": {"기존건물": fact},
+                           "evidence_records": {_beid: _ev_record(_beid, "api", msg, source_url="건축HUB getBrTitleInfo")},
+                           "_toolcalls": ["get_building_register"],
+                           "messages": [_tm(msg + f" (근거ID:{_beid})", tool_call_id)]})
 
 
 @tool
