@@ -452,7 +452,10 @@ def build_graph():
     _is_stub = bool(os.environ.get("FORCE_STUB") or os.environ.get("APP_MODE") == "stub")
     # 실 LLM=단일파일 영속(재시작 후 thread resume) · stub/테스트=in-memory(파일 오염·무한증가 방지·결정적). 단일파일까지만(Postgres·락 과설계 안 함).
     # ⚠️ 운영 파일 db는 checkpoint가 thread별 무한 누적(retention/TTL 없음 — 데모 가정) → 주기적으로 ganeomteo_checkpoints.db* 삭제로 리셋(운영 전환시 delete_thread retention 잡 추가).
-    _db = ":memory:" if _is_stub else os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ganeomteo_checkpoints.db")
-    _conn = sqlite3.connect(_db, check_same_thread=False)   # FastAPI 멀티스레드 invoke → check_same_thread=False (+SqliteSaver 내부 threading.Lock이 쓰기 직렬화)
+    _db = ":memory:" if _is_stub else (os.environ.get("GANEOMTEO_DB") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ganeomteo_checkpoints.db"))   # GANEOMTEO_DB=병렬 검수 시 thread별 격리 db(락경합 회피)
+    _conn = sqlite3.connect(_db, check_same_thread=False, isolation_level=None)   # isolation_level=None=autocommit(langgraph from_conn_string canonical) → interrupt(HITL) write가 프로세스 종료 전 즉시 커밋·영속 → cross-process resume 보장. check_same_thread=False=FastAPI 멀티스레드 invoke(+SqliteSaver 내부 Lock 직렬화)
+    if _db != ":memory:":
+        _conn.execute("PRAGMA journal_mode=WAL")          # 동시 reader/writer 락경합 완화
+        _conn.execute("PRAGMA busy_timeout=5000")         # 락대기 5s — 병렬 thread/process 동시 invoke 시 즉시 'database is locked' 회피
     _saver = SqliteSaver(_conn); _saver.setup()             # 체크포인트 테이블 생성(idempotent)
     return b.compile(checkpointer=_saver), mode             # H3: interrupt(HITL) sqlite 영속 — 실 LLM은 프로세스 재시작 후에도 thread resume
