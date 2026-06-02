@@ -198,6 +198,8 @@ def jorye_rag(sigungu, zone, 용도키워드=("일반음식점","휴게음식점
 JIMOK_UIJAE={"전":"농지전용","답":"농지전용","과수원":"농지전용","임야":"산지전용"}
 
 def run(addr,atype,area=264,용도="카페(일반음식점)"):
+    # ⚠️ PROTOTYPE/CLI 데모 (item 19): 이 run()의 verdict/판정 로직은 운영 경로 아님. 운영 에이전트는
+    #    이 파일의 fetch 함수(geo/parcel/act_detail/building_register 등)만 쓰고 판정은 graph.py·tools.py(record_*)가 한다.
     log=[]; P=lambda *a: (print(*a), log.append(" ".join(str(x) for x in a)))
     P("="*72); P(f"[무하드코딩 e2e] {addr} | {용도} {area}㎡"); P("="*72)
     xy=geo(addr,atype); time.sleep(.5)
