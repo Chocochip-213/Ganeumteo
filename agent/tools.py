@@ -718,6 +718,47 @@ def record_landuse_resolution(
 
 
 @tool
+def record_procedure_steps(
+        steps: Annotated[list, Field(description="인허가 절차 타임라인 [{step_id, order, stage_key, applies(yes/no/unknown), status(근거확보/확인필요), unresolved_by, actor, authority, trigger, action, when_note, deadline, law_name, article, basis_claims, requires_documents, related_document_stage_keys, source_api, notes}]. documents와 별개(절차 순서·주체·관할). verdict/가부 안 만듦.")],
+        state: Annotated[dict, InjectedState] = None,
+        tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
+    """인허가 행정 절차 타임라인을 커밋(건축허가/건축신고/용도변경/가설건축물/해체/착공신고/감리/사용승인/건축물대장/유지관리 등 — 네가 법령 근거로 분기·구성).
+    documents(제출서류)와 분리. 비신축은 신축3단계(건축허가/착공/사용승인) 상속 금지. 근거계약(field 단위 basis_claims): status=근거확보·applies=no(비해당) 확정은 근거 필수·실재 → 없으면 확인필요로 강등. 확인필요는 unresolved_by 분류."""
+    state = state or {}
+    out = []
+    for s in (steps or []):
+        if not isinstance(s, dict) or not s.get("step_id"):
+            continue
+        claims = [c for c in (s.get("basis_claims") or []) if isinstance(c, dict)]
+        applies = s.get("applies", "yes"); applies = applies if applies in ("yes", "no", "unknown") else "yes"
+        status = s.get("status", "확인필요"); status = status if status in ("근거확보", "확인필요") else "확인필요"
+        ub = s.get("unresolved_by", "none"); ub = ub if ub in _UNRESOLVED_VALUES else "none"
+        if status == "근거확보" or applies == "no":   # 근거 없는 확정/비해당 금지 → 강등(확정 세탁 방지)
+            ok, _ = validate_basis_claims(state, claims)
+            if not (claims and ok):
+                status = "확인필요"
+                if applies == "no":
+                    applies = "unknown"
+                if ub == "none":
+                    ub = "agent"
+        if status == "확인필요" and ub == "none":
+            ub = "agent"   # bare 확인필요 방지(기본 agent=더 조사)
+        out.append(ProcedureStep(
+            step_id=str(s.get("step_id"))[:40], order=float(s.get("order") or 0), stage_key=str(s.get("stage_key", ""))[:40],
+            applies=applies, status=status, unresolved_by=ub, actor=str(s.get("actor", ""))[:60], authority=str(s.get("authority", ""))[:60],
+            trigger=str(s.get("trigger", ""))[:120], action=str(s.get("action", ""))[:200], when_note=str(s.get("when_note", ""))[:200],
+            deadline=str(s.get("deadline", ""))[:60], law_name=str(s.get("law_name", ""))[:60], article=str(s.get("article", ""))[:40],
+            title_from_law=str(s.get("title_from_law", ""))[:120], quote=str(s.get("quote", ""))[:200], basis_claims=claims,
+            citation_ids=[str(x) for x in (s.get("citation_ids") or [])], related_document_stage_keys=[str(x) for x in (s.get("related_document_stage_keys") or [])],
+            requires_documents=bool(s.get("requires_documents")), source_api=str(s.get("source_api", ""))[:40],
+            notes=[str(x)[:120] for x in (s.get("notes") or [])]).model_dump())
+    if not out:
+        return Command(update={"messages": [_tm("<tool_use_error>record_procedure_steps: step_id 있는 절차 1개 이상 필요.</tool_use_error>", tool_call_id)]})
+    return Command(update={"procedure_steps": out, "_toolcalls": ["record_procedure_steps"], "_reject_count": 0,
+                           "messages": [_tm(f"절차 {len(out)}건 기록", tool_call_id)]})
+
+
+@tool
 def record_ordinance_ruling(
         verdict: Annotated[Literal["가능", "불가", "확인필요"], Field(
             description="조례 별표 호목해소 결론. 가능=제공된 별표 원문 호목이 해당 용도를 명시적으로 허용. "
@@ -878,6 +919,6 @@ TOOLS = [geocode, get_parcel, get_building_register, get_building_floors, get_la
          ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
          compute_envelope, normalize_area, parking_quota, levy_estimate,
          author_rule_tool, reg_effect_resolve_tool, record_uijae, record_reg_resolution, record_ordinance_ruling, record_verdict,
-         record_use_classification, record_landuse_resolution,
+         record_use_classification, record_landuse_resolution, record_procedure_steps,
          request_human_input]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}

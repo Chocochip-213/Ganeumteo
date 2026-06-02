@@ -95,14 +95,22 @@ def completeness_guard(state):
         miss.append("조례별표")
     if state.get("reg_overlaps") and "reg_effect_resolve_tool" not in called:
         miss.append("규제조회")   # 중첩규제(reg_overlaps) 있으면 근거조회 강제 — 미조회 채 '가능' 차단(호출여부 게이트, dedup 무관·robust). 영향판정·critical 표식은 record_reg_resolution/LLM 몫(결함1 fix). stub은 agent.py:98서 호출하므로 자연 satisfy.
-    if state.get("pnu"):   # med: 호출여부가 아니라 단계 커버리지 검사
-        doc_stages = {d.get("stage_key") for d in state.get("documents", []) if d.get("status") == "전수확보"}   # 실패(확인필요) 단계는 미커버 — 성공만 카운트(실패가 완료로 둔갑 방지)
-        # 건축허가(=신축/증축)를 가져왔거나 아직 아무 단계도 안 가져왔으면 신축 3단계 완결성 요구. 그 외(용도변경 등 LLM이 다른 stage 선택)는 그 단계만 — 신축 가정 안 함.
-        base = {"건축허가", "착공신고", "사용승인"} if ("건축허가" in doc_stages or not doc_stages) else set(doc_stages)
-        need = base | {u.get("stage_key") for u in state.get("uijae", [])}
-        if not need.issubset(doc_stages):
-            miss.append("서류전수:" + ",".join(sorted(need - doc_stages)))
-        # 조건부('해당시만') 서류 미판정 검사 — 에이전트가 케이스로 판정(필요시 사용자 질의)해야 종료(최상위 호만, 목 제외)
+    _is_stub = bool(os.environ.get("FORCE_STUB") or os.environ.get("APP_MODE") == "stub")
+    if state.get("pnu"):   # substantive diagnosis(입지 확보)에서만 절차/완료 게이트 — geocode 실패·잡담은 면제(item 10 조건부)
+        # item 10: 절차판정 선행(신축3단계 기본값 제거) — record_procedure_steps 없으면 절차 누락(비신축 신축흐름 강제 안 함)
+        if "record_procedure_steps" not in called:
+            miss.append("절차판정")
+        # 서류 = 적용 절차(requires_documents=true) + 의제 stage만 요구(신축 가정 제거). list_status=전수확보만 커버(실패=미커버).
+        proc = [p for p in state.get("procedure_steps", []) if isinstance(p, dict) and p.get("applies") != "no"]
+        doc_stages = {d.get("stage_key") for d in state.get("documents", []) if d.get("list_status", d.get("status")) == "전수확보"}
+        doc_need = set()
+        for p in proc:
+            if p.get("requires_documents"):
+                doc_need.update(k for k in (p.get("related_document_stage_keys") or [p.get("stage_key")]) if k)
+        doc_need.update(u.get("stage_key") for u in state.get("uijae", []) if u.get("stage_key"))
+        if not doc_need.issubset(doc_stages):
+            miss.append("서류전수:" + ",".join(sorted(doc_need - doc_stages)))
+        # 조건부('해당시만') 서류 미판정 검사(최상위 호만, 목 제외)
         _mok = "가나다라마바사아자차카타파하"
         cond_keys = {(d.get("stage_key"), _norm_ho(it.get("ho"))) for d in state.get("documents", [])
                      for it in (d.get("items") or [])
@@ -111,16 +119,30 @@ def completeness_guard(state):
         if cond_keys - assessed:
             miss.append(f"조건부판정:{len(cond_keys - assessed)}건")
         else:
-            # unknown 조건부(권원·공동소유·사전결정·분할납부 등 사용자만 아는 사실)인데 사용자에게 한 번도 안 물었으면 → 묻으라고 바운스(검수 #1: unknown이 완료로 통과하던 것). 이미 물은 뒤의 unknown·stub은 수용(과바운스 방지).
             _unk = {(a.get("stage_key"), _norm_ho(a.get("ho"))) for a in state.get("cond_assessments", []) if str(a.get("applies")) == "unknown"} & cond_keys
-            _is_stub = os.environ.get("FORCE_STUB") or os.environ.get("APP_MODE") == "stub"
             if _unk and "request_human_input" not in called and not _is_stub:
                 miss.append(f"조건부 사용자확인:{len(_unk)}건")
+        # item 1·2·10: per-overlap 규제 완료게이트 — 각 reg_overlap에 record_reg_resolution(resolution_committed) 필수(stub 면제). reg_effect_resolve_tool 조회만으론 완료 금지.
+        if not _is_stub and state.get("reg_overlaps"):
+            _lr = _resolved_regs(state)
+            _miss_reg = [r for r in state["reg_overlaps"] if r and not (_lr.get(r) or {}).get("resolution_committed")]
+            if _miss_reg:
+                miss.append("규제해소:" + ",".join(str(r) for r in _miss_reg[:5]))
+        # §0 2b: agent-미해결 루프백 — reg_effects/verdict_labels에 unresolved_by=agent 남으면 더 조사 강제(stub 면제). 최종 카드 잔존은 user/authority/data_unavailable/tool_budget_exhausted만.
+        if not _is_stub:
+            _vl = state.get("_verdict_round") if state.get("_verdict_round") is not None else state.get("verdict_labels", [])
+            _agent_un = ([r.get("reg_name") for r in _resolved_regs(state).values() if r.get("unresolved_by") == "agent"]
+                         + [v.get("dimension") for v in _vl if isinstance(v, dict) and v.get("unresolved_by") == "agent"])
+            if _agent_un:
+                miss.append("미해결재조사(agent):" + ",".join(str(x) for x in _agent_un[:4]))
     if miss and (state.get("_steps", 0) - state.get("_turn_base_steps", 0)) < _GUARD_BOUNCE_CAP and not stalled:
-        # 제어신호는 사용자 발화로 위장하지 않는다 — <system-reminder>로 명시(Claude Code 패턴). 모델은 이를 자동점검 지시로 읽음.
-        return {"_incomplete": True, "messages": [HumanMessage(f"<system-reminder>완결성 자동점검(사용자 발화 아님): 아직 미확인 {miss}. 해당 도구로만 마저 조회하고, 끝나면 도구 없이 '완료'라 답하라.</system-reminder>")]}
-    if miss:   # 캡 도달 — 더 못 채움 → 기권 사유로 남기고 진행
-        return {"_incomplete": False, "abstentions": [{"node": "completeness_guard", "사유": f"미충족 {miss}(스텝 캡)"}]}
+        # 제어신호는 사용자 발화로 위장하지 않는다 — <system-reminder>로 명시(Claude Code 패턴).
+        return {"_incomplete": True, "messages": [HumanMessage(f"<system-reminder>완결성 자동점검(사용자 발화 아님): 아직 미확인 {miss}. 해당 도구로만 마저 조회·판정하고(확인필요는 unresolved_by로 분류, 더 조사 가능하면 직접 조사), 끝나면 도구 없이 '완료'라 답하라.</system-reminder>")]}
+    if miss:   # 캡 도달 — 0f/0g: 더 못 채움. cap honesty(_capped→compose가 tool_budget_exhausted) + agent 미해결→tool_budget_exhausted 변환(append-only)
+        upd = {"_incomplete": False, "_capped": True,
+               "abstentions": [{"node": "completeness_guard", "사유": f"미충족 {miss}(스텝 캡)", "attempted_tools": sorted(called)}]}
+        upd.update(_convert_agent_unresolved(state))   # 0g: agent→tool_budget_exhausted 새 row(reg_effects append·_verdict_round 재구성)
+        return upd
     return {"_incomplete": False}
 
 
@@ -170,6 +192,24 @@ def _latest_landuse(state):
     """record_landuse_resolution 최신 1엔트리(마지막 커밋). 없으면 None. 코드 act_verdict 승격 대체(item 3) — 행위제한 판정 입력은 이것만."""
     lrs = [l for l in (state.get("landuse_resolutions") or []) if isinstance(l, dict)]
     return lrs[-1] if lrs else None
+
+
+def _convert_agent_unresolved(state):
+    """0g: 스텝캡 도달시 agent(더 조사 가능했으나 캡 소진) → tool_budget_exhausted 변환(무한루프 차단·정직 표시).
+    reg_effects=새 row append(committed selector가 최신 집음), verdict_labels=_verdict_round 재구성(last-write-wins). 기존 row 수정 아님(append-only)."""
+    out = {}
+    new_regs = []
+    for r in _resolved_regs(state).values():
+        if r.get("unresolved_by") == "agent":
+            r2 = dict(r); r2["unresolved_by"] = "tool_budget_exhausted"; r2["resolution_committed"] = True
+            r2["effect"] = (str(r.get("effect", "")) + " [스텝캡 소진: 자동 미해소]").strip()
+            new_regs.append(r2)
+    if new_regs:
+        out["reg_effects"] = new_regs
+    _vl = state.get("_verdict_round") if state.get("_verdict_round") is not None else state.get("verdict_labels", [])
+    if any(isinstance(v, dict) and v.get("unresolved_by") == "agent" for v in _vl):
+        out["_verdict_round"] = [{**v, "unresolved_by": "tool_budget_exhausted"} if isinstance(v, dict) and v.get("unresolved_by") == "agent" else v for v in _vl]
+    return out
 
 
 def build_reasoning(state):
@@ -323,8 +363,13 @@ def compose(state):
         "reg_effects": list(_resolved_regs(state).values()),   # reg_name별 최신(resolution 우선) 중복 제거(검수 F1)
         "citations": len(state.get("citations", [])),
         "abstentions": state.get("abstentions", []),
+        # item 10: 인허가 절차 타임라인(documents와 분리) — order 정렬, applies=no(비해당)는 접어 표시(프론트)
+        "procedure_steps": sorted([p for p in state.get("procedure_steps", []) if isinstance(p, dict)],
+                                  key=lambda p: p.get("order", 0)),
+        "landuse_resolution": _latest_landuse(state),   # 행위제한 LLM 판정(act_landuse_raw는 probe)
     }
-    return {"_card": card, "terminal_reason": "completed"}
+    # 0f cap 정직성: 완결성 캡 도달(_capped)이면 completed 아님 → tool_budget_exhausted(status≠완료). 정상 완료만 completed.
+    return {"_card": card, "terminal_reason": "tool_budget_exhausted" if state.get("_capped") else "completed"}
 
 
 _STATUS = {"completed": "완료", "verdict_resolved": "조기종료", "need_human": "사람검토",

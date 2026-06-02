@@ -82,6 +82,13 @@ def stub_plan(state):
         if state.get("road_side") == "맹지":   # #9 입지의제(맹지→사도)
             items.append({"trigger": "맹지(도로 미접)", "permit_name": "사도개설허가", "stage_key": "사도개설"})
         return _call("record_uijae", {"items": items})
+    # 절차 타임라인 seed(stub, item 10) — 신축 3단계 + 의제 단계(requires_documents=true). 실 LLM은 work_type별 분기·법령근거로 구성.
+    if "record_uijae" in called and "record_procedure_steps" not in called:
+        _stg = list(dict.fromkeys(["건축허가", "착공신고", "사용승인"] + [u["stage_key"] for u in state.get("uijae", [])]))
+        _steps = [{"step_id": sk, "order": i, "stage_key": sk, "applies": "yes", "status": "확인필요",
+                   "unresolved_by": "agent", "requires_documents": True, "related_document_stage_keys": [sk],
+                   "action": f"[stub] {sk} 절차(실 LLM이 법령근거로 구성)"} for i, sk in enumerate(_stg)]
+        return _call("record_procedure_steps", {"steps": _steps})
     # 서류 (건축허가+의제단계+착공+사용승인, docs_for 지원분만)
     need = ["건축허가"] + [u["stage_key"] for u in state.get("uijae", [])] + ["착공신고", "사용승인"]
     done = {d["stage_key"] for d in state.get("documents", [])}
