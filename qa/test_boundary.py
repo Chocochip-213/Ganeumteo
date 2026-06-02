@@ -34,13 +34,46 @@ def test_reg_seed_status_creep():
 
 
 def test_record_reject_guard_set():
-    """U1 doom-loop 가드 대상 = 근거없는 단정 거부 도구 3종(record_verdict·ordinance·reg_resolution)."""
+    """U1 doom-loop 가드 대상 = 근거없는 단정 거부 도구(record_verdict·ordinance·reg_resolution + 신규 분류도구)."""
     import graph
-    assert {"record_verdict", "record_ordinance_ruling", "record_reg_resolution"} <= graph._RECORD_TOOLS
+    assert {"record_verdict", "record_ordinance_ruling", "record_reg_resolution",
+            "record_use_classification", "record_landuse_resolution", "record_work_type"} <= graph._RECORD_TOOLS
+
+
+def test_new_contract_tools_injectedstate():
+    """item 0c: 결론성 도구 9종 + 계산 3종이 존재하고 근거계약 검증용 InjectedState(state 파라미터)를 받는다."""
+    import inspect, tools
+    concl = ["record_reg_resolution", "record_verdict", "record_ordinance_ruling", "record_landuse_resolution",
+             "record_use_classification", "record_procedure_steps", "record_work_type", "record_uijae", "assess_conditional_docs"]
+    calc = ["parking_quota", "levy_estimate"]   # author_rule_tool은 §23① fetch 기반(값 인자 없음)
+    by = tools.TOOLS_BY_NAME
+    for nm in concl + calc:
+        assert nm in by, f"{nm} TOOLS 미등록"
+    # 신규 결론성 도구는 state(InjectedState) 파라미터 보유(근거 실재 검증 경유)
+    for nm in ["record_reg_resolution", "record_verdict", "record_landuse_resolution", "record_use_classification",
+               "record_work_type", "record_procedure_steps", "assess_conditional_docs", "parking_quota", "levy_estimate"]:
+        params = inspect.signature(by[nm].func).parameters
+        assert "state" in params, f"{nm} InjectedState(state) 미수신 → 근거계약 검증 불가"
+
+
+def test_no_hardcoded_industry_branch():
+    """item 8·13 무하드코딩: graph/tools 코드(주석·docstring 제외)에 특정 업종/구역명 if 분기 0."""
+    import re
+    for fn in ("graph.py", "tools.py"):
+        p = os.path.join(_ROOT, "agent", fn)
+        with open(p, encoding="utf-8") as f:
+            for ln in f:
+                s = ln.strip()
+                if s.startswith("#") or s.startswith('"') or "description=" in s or "_tm(" in s or "note=" in s:
+                    continue
+                # if/elif 분기에 업종/구역명 리터럴이 박히면 과적합
+                if re.match(r"^(if|elif)\b", s) and re.search(r"피시방|인터넷컴퓨터게임|상대보호구역|교육환경보호", s):
+                    raise AssertionError(f"{fn}: 업종/구역명 코드 분기 — {s[:80]}")
 
 
 def main():
-    fns = [test_import_boundary, test_tools_command_contract, test_reg_seed_status_creep, test_record_reject_guard_set]
+    fns = [test_import_boundary, test_tools_command_contract, test_reg_seed_status_creep, test_record_reject_guard_set,
+           test_new_contract_tools_injectedstate, test_no_hardcoded_industry_branch]
     fail = 0
     for fn in fns:
         try:
