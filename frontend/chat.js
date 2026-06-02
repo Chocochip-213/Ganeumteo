@@ -99,13 +99,22 @@ const _TERMKEYS = Object.keys(GLOSSARY).filter((k) => k.length >= 3).sort((a, b)
 function termHtml(key, label) {
   return `<span class="term" data-term="${esc(key)}">${esc(label || key)}<span class="term-q">?</span></span>`;
 }
-function linkifyTerms(plain) {   // 평문 → 용어 span(esc 후 첫 등장 래핑). HTML 입력 금지(평문만).
+const _HANGUL_SYL = /[가-힣]/;   // 한글 완성형 음절 — 단어경계 판정용(item 18)
+function linkifyTerms(plain) {   // 평문 → 용어 span(esc 후 단어시작 첫 등장 래핑). HTML 입력 금지(평문만).
   let html = esc(String(plain == null ? "" : plain));
   for (const k of _TERMKEYS) {
-    const ek = esc(k), idx = html.indexOf(ek);
-    if (idx < 0) continue;
-    if (html.lastIndexOf("<span", idx) > html.lastIndexOf("</span>", idx)) continue;   // 이미 span 안이면 skip
-    html = html.slice(0, idx) + termHtml(k, k) + html.slice(idx + ek.length);
+    const ek = esc(k);
+    // item 18: 단어경계만 매칭 — 앞 글자가 한글 음절이면 단어 중간(어미/조사 내부 부분문자열)이라 skip. 키당 첫 유효 등장만.
+    let from = 0, idx;
+    while ((idx = html.indexOf(ek, from)) >= 0) {
+      const inSpan = html.lastIndexOf("<span", idx) > html.lastIndexOf("</span>", idx);
+      const before = idx > 0 ? html[idx - 1] : "";
+      if (!inSpan && !(before && _HANGUL_SYL.test(before))) {
+        html = html.slice(0, idx) + termHtml(k, k) + html.slice(idx + ek.length);
+        break;
+      }
+      from = idx + ek.length;
+    }
   }
   return html;
 }
@@ -716,6 +725,7 @@ function answerMessage(c) {
     verdictCard(env, card, cits, c.result) +
     documentFactsCard(card) +
     envelopeCard(card) + leviesCard(card) + parkingCard(card) +
+    procedureStepsCard(card) +
     `<div class="rp-sec-h">${I.list} 단계별 제출 서류</div>` + docCards(card);
   return `<div class="answer-msg ${level}" data-role="answer">
     <div class="am-head"><span class="am-sig">${level === "go" ? I.go : level === "cond" ? I.cond : I.info}</span><span class="am-verdict">${headline}</span></div>
@@ -1188,45 +1198,61 @@ function _stageItems(d) {
   return app.concat(arr(d.items));
 }
 
+// 인허가 절차 타임라인(item 17) — card.procedure_steps만 사용(documents서 추론 안 함, 법적 절차 합성 금지). backend 값만 표시.
+function procedureStepsCard(card) {
+  const steps = arr(card.procedure_steps);
+  if (!steps.length) return "";   // 없으면 합성 안 함(프론트가 절차 임의 생성 금지)
+  const sorted = steps.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  const ubBadge = (ub) => ub === "authority" ? `<span class="ps-ub ps-ub-auth">관할 심의/확인</span>`
+    : ub === "user" ? `<span class="ps-ub ps-ub-user">사용자 확인</span>`
+    : ub === "data_unavailable" ? `<span class="ps-ub ps-ub-na">데이터 부재</span>`
+    : ub === "tool_budget_exhausted" ? `<span class="ps-ub ps-ub-cap">추가 조사 한도</span>` : "";
+  const stBadge = (s) => s === "근거확보" ? `<span class="ps-st ps-st-ok">근거확보</span>` : `<span class="ps-st ps-st-q">확인필요</span>`;
+  let n = 0;
+  const rows = sorted.map((p) => {
+    const off = (p.applies || "yes") === "no";
+    const title = esc(p.title || p.stage_key || p.step_id || "단계");
+    const action = p.action || p.when_note || "";
+    const meta = [];
+    if (p.actor) meta.push("주체 " + esc(p.actor));
+    if (p.authority) meta.push("관할 " + esc(p.authority));
+    if (p.law_name) meta.push(esc(p.law_name) + (p.article ? " " + esc(p.article) : ""));
+    const docN = arr(p.related_document_stage_keys).length;
+    if (p.requires_documents && docN) meta.push("연결 서류 " + docN + "단계");
+    return `<div class="ps-row${off ? " ps-off" : ""}">
+      <div class="ps-num">${off ? "–" : ++n}</div>
+      <div class="ps-body">
+        <div class="ps-title">${title}${off ? `<span class="ps-na">비해당</span>` : ""}${stBadge(p.status)}${ubBadge(p.unresolved_by)}</div>
+        ${action ? `<div class="ps-action">${linkifyTerms(String(action))}</div>` : ""}
+        ${meta.length ? `<div class="ps-meta">${esc(meta.join(" · "))}</div>` : ""}
+      </div></div>`;
+  }).join("");
+  return `<div class="card card-pad ps-card"><div class="rp-sec-h">${I.list} 인허가 절차</div>
+    <div class="ps-list">${rows}</div>
+    <p class="ps-foot">절차·순서·관할은 법령 근거로 산출된 항목만 표시합니다.</p></div>`;
+}
+
 function docCards(card) {
   const docs = orderedDocs(card);
   if (!docs.length) return `<div class="card card-pad"><div class="docs-head"><span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--fg-3)">${I.list} 제출 서류</span></div><p style="font-size:14px;color:var(--fg-3);margin:6px 0 0">서류 단계가 산출되지 않았어요. 관할 기관(해당 시·군·구청 건축과)에 직접 문의가 필요해요.</p></div>`;
   const uijaeKeys = new Set(arr(card.uijae).map((u) => u && u.stage_key).filter(Boolean));
-  // 의제(농지전용 등)는 별도 카드가 아니라 주 허가단계(건축허가/용도변경) 카드 안 "함께 첨부" 섹션으로 병합(건축법 §11⑤).
-  const mains = docs.filter((d) => !uijaeKeys.has(String(d.stage || d.stage_key || "")));
-  const uijaes = docs.filter((d) => uijaeKeys.has(String(d.stage || d.stage_key || "")));
+  // item 17: 모든 제출서류를 동등 카드로 렌더(의제를 주 단계 하위에 강제삽입하지 않음). 의제 stage는 '관련 인허가' chip만 표시.
   let n = 0;
-  if (!mains.length) return uijaes.map((d) => docStageCard(d, ++n, false, [])).join("");   // 주 단계 없이 의제만 있는 비정상 케이스 — 의제 누락 방지(검수 S2)
-  return mains.map((d, i) => docStageCard(d, ++n, false, i === 0 ? uijaes : [])).join("");
+  return docs.map((d) => docStageCard(d, ++n, uijaeKeys.has(String(d.stage || d.stage_key || "")))).join("");
 }
 
-function docStageCard(d, num, isUijae, embedUijae) {
+function docStageCard(d, num, isUijae) {
   const stage = d.stage || d.stage_key || "단계";
-  const ok = d.status === "전수확보";
+  const ok = (d.list_status || d.status) === "전수확보";   // item 5: 목록확보 = list_status(해당여부는 items[].applies_status와 분리)
   const law = d.law || "", article = d.article || "";
   // item_type 기반 렌더(application/group/doc/spec/cross_ref) — renderDocItems 공용. 신청서 양식도 제출목록 동등 row(메인/부속 구분 제거).
   const R = renderDocItems(_stageItems(d), law, article);
   const orderedHtml = R.html;
   const submit = R.submit, check = R.check, off = R.off, xref = R.xref;
 
-  // 의제 서류 = 별도 카드 아니라 이 주 단계 카드 안 "함께 첨부" 섹션으로 병합(건축법 §11⑤ — 의제는 건축허가에 함께 처리)
-  const emb = arr(embedUijae).filter((u) => u && (u.stage || u.stage_key));   // 확인필요 의제도 누락 없이 — 자동조회 실패 신호 보존(검수 S1)
-  const embedHtml = emb.length ? `<div class="ds-uijae-wrap"><div class="ds-uijae-head">${I.info} 건축허가 접수 시 <b>함께 첨부</b>되는 의제 서류 <span class="ds-uijae-sub">건축법 §11⑤ · 별도 민원 아님</span></div>${emb.map((u) => {
-    const ust = u.stage || u.stage_key || "의제";
-    if (u.status !== "전수확보") {
-      return `<div class="ds-uijae"><div class="ds-uijae-t"><span class="ds-uijae-name">${esc(ust)}</span><span class="ds-uijae-law">자동 조회 안 됨 — 발급처에서 직접 확인(서류 없다는 뜻 아님)</span></div></div>`;
-    }
-    const ur = renderDocItems(_stageItems(u), u.law || "", u.article || "");
-    const ulaw = [u.law, u.article].filter(Boolean).join(" ");
-    return `<div class="ds-uijae"><div class="ds-uijae-t"><span class="ds-uijae-name">${esc(ust)}</span><span class="ds-uijae-law">${esc(ulaw)}${ulaw ? " · " : ""}제출 ${ur.submit.length}건${ur.check.length ? ` · 확인필요 ${ur.check.length}건` : ""}</span></div><div class="ds-items ds-items-u">${ur.html}</div></div>`;
-  }).join("")}</div>` : "";
-
-  // 링크: 시행규칙 원문(law.go.kr) + 제출처 포털
+  // item 17: 의제 하위삽입·§11⑤ 하드코딩 제거 — 의제도 동등 카드(아래 chip). 제출처 포털도 코드가 stage 키워드로 확정 안 함(backend 값 없으면 중립 안내).
   const lawLink = law ? `<a class="ds-link" href="${esc(lawURL(law))}" target="_blank" rel="noreferrer">${I.ext} 시행규칙 원문</a>` : "";
-  const [where, purl] = submitPortal(stage);
-  const submitLink = isUijae   // 의제는 별도 민원이 아니라 건축허가 신청에 첨부(의제처리 — 검수 #6)
-    ? `<span class="ds-link ds-link-note">${I.info} 건축허가 신청에 함께 첨부(별도 민원 아님)</span>`
-    : `<a class="ds-link" href="${esc(purl)}" target="_blank" rel="noreferrer">${I.pin} ${esc(where)} 제출</a>`;
+  const submitLink = `<span class="ds-link ds-link-note">${I.pin} 제출처는 관할 기관·해당 인허가 시스템에서 확인</span>`;
 
   // 부제: 제출 N · 확인필요 M · 해당없음 K — 에이전트 판정 반영
   const lawLine = [law, article].filter(Boolean).join(" ");
@@ -1245,7 +1271,7 @@ function docStageCard(d, num, isUijae, embedUijae) {
       : (wLaw ? `<span class="ds-when-law">${esc(wLaw)}</span>` : "");
     whenHtml = `<div class="ds-when"><span class="ds-when-lbl">언제</span><span class="ds-when-t">${esc(wMain)}</span>${wsrc}</div>`;
   } else if (isUijae) {
-    whenHtml = `<div class="ds-when ds-when-u"><span class="ds-when-lbl">언제</span><span class="ds-when-t">건축허가 시 함께 처리되는 인허가(의제)</span></div>`;
+    whenHtml = `<div class="ds-when ds-when-u"><span class="ds-when-lbl">언제</span><span class="ds-when-t">관련 인허가(의제로 함께 검토될 수 있음)</span></div>`;
   }
 
   // 작성주체: 에이전트가 법령근거(신청인/건축사§23/감리자§25)로 생성한 한 줄
@@ -1254,15 +1280,14 @@ function docStageCard(d, num, isUijae, embedUijae) {
 
   return `<div class="doc-stage ${ok ? "" : "na"}">
     <div class="ds-head">
-      ${isUijae ? `<div class="ds-num ds-num-u" title="건축허가에 함께 처리되는 의제(건축법 §11⑤)">의제</div>` : `<div class="ds-num">${num}</div>`}
-      <div class="ds-main"><div class="ds-t">${esc(stage)}</div><div class="ds-law">${sub}</div></div>
+      <div class="ds-num${isUijae ? " ds-num-u" : ""}">${num}</div>
+      <div class="ds-main"><div class="ds-t">${esc(stage)}${isUijae ? `<span class="ds-uijae-chip" title="관련 인허가(의제로 함께 검토)">관련 인허가</span>` : ""}</div><div class="ds-law">${sub}</div></div>
       <span class="ds-badge ${ok ? "ok" : "na"}">${ok ? "법정 제출목록" : "확인필요"}</span>
     </div>
     ${whenHtml}
     ${authorHtml}
     ${ok && orderedHtml ? `<div class="ds-items">${orderedHtml}</div>` : ""}
-    ${embedHtml}
-    ${!ok ? `<div class="ds-na-note">${I.bang}<span>이 단계 서류는 자동 조회가 되지 않았어요. 발급처(${esc(where)})에서 직접 확인하세요. <b>서류가 없다는 뜻은 아니에요.</b></span></div>` : ""}
+    ${!ok ? `<div class="ds-na-note">${I.bang}<span>이 단계 서류는 자동 조회가 되지 않았어요. 관할 기관(해당 시·군·구청 건축과 등)에서 직접 확인하세요. <b>서류가 없다는 뜻은 아니에요.</b></span></div>` : ""}
     <div class="ds-links">${lawLink}${submitLink}</div>
   </div>`;
 }

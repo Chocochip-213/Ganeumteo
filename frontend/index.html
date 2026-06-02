@@ -220,6 +220,29 @@
     .ds-apply { flex-wrap: wrap; }
     .ds-apply-dl { margin-left: 24px; }
   }
+
+  /* 인허가 절차 타임라인 (item 17) */
+  .ps-card { margin-top: 12px; }
+  .ps-card .rp-sec-h { padding: 0 0 8px; }
+  .ps-list { display: flex; flex-direction: column; gap: 0; position: relative; }
+  .ps-row { display: flex; gap: 12px; padding: 10px 2px; border-top: 1px solid var(--border-1); }
+  .ps-row:first-child { border-top: none; }
+  .ps-row.ps-off { opacity: 0.5; }
+  .ps-num { width: 24px; height: 24px; border-radius: 999px; background: var(--sky-500); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+  .ps-off .ps-num { background: var(--border-1); color: var(--fg-3); }
+  .ps-body { flex: 1; min-width: 0; }
+  .ps-title { font-size: 13.5px; font-weight: 700; color: var(--fg-1); display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .ps-action { font-size: 12.5px; color: var(--fg-2); margin-top: 3px; line-height: 1.5; }
+  .ps-meta { font-size: 11.5px; color: var(--fg-3); margin-top: 4px; }
+  .ps-st { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 7px; }
+  .ps-st-ok { background: var(--sky-50, #eef6ff); color: var(--sky-600, #1d6fd0); }
+  .ps-st-q { background: var(--warm-bg); color: var(--warm-fg); }
+  .ps-ub { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 7px; background: var(--warm-bg); color: var(--warm-fg); }
+  .ps-ub-auth { background: #f3ecff; color: #7a3fd0; }
+  .ps-na { font-size: 10px; font-weight: 700; color: var(--fg-3); border: 1px solid var(--border-1); border-radius: 999px; padding: 1px 6px; }
+  .ps-foot { font-size: 11px; color: var(--fg-3); margin: 8px 0 0; }
+  /* 의제 = 동등 카드 + 관련 인허가 chip (item 17, §11⑤ 하위삽입 제거) */
+  .ds-uijae-chip { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 7px; background: var(--warm-bg); color: var(--warm-fg); margin-left: 7px; vertical-align: middle; }
 </style>
 </head>
 <body>
