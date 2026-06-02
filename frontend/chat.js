@@ -547,7 +547,7 @@ function makeThinking() {
     },
     // 이 상태 버블을 제거(자리비움) — 그 자리에 답변 메시지가 들어감
     remove() { wrap.remove(); },
-    // 진단 done → 라이브 버블을 '🤔 검토 완료 · N단계 [자세히 보기]' 칩으로 교체. 자세히=우측 생각과정 사이드바. c.msgs에 기록(복원 재생).
+    // 진단 done → 라이브 버블을 '검토 완료 · N단계 [자세히 보기]' 칩으로 교체. 자세히=우측 생각과정 사이드바. c.msgs에 기록(복원 재생).
     done(c) {
       const n = Array.isArray(c && c.trace) ? c.trace.length : 0;
       const html = `<div class="bubble think-done">검토 완료${n ? ` · ${n}단계` : ""} <button class="am-open" data-act="openpanel">${I.route} 자세히 보기</button></div>`;
@@ -814,7 +814,7 @@ function renderPanel(c) {
   body.scrollTop = 0;
 }
 
-// ── 우측 '상세 추론 과정': c.trace[] step들을 시간순으로(도구호출·결과·🤔사고·근거·판정) ──
+// ── 우측 '상세 추론 과정': c.trace[] step들을 시간순으로(도구호출·결과·사고·근거·판정) ──
 function flowSection(c) {
   const tr = arr(c && c.trace);
   if (!tr.length) return `<div class="card card-pad"><p style="font-size:13.5px;color:var(--fg-3);margin:0;line-height:1.6">${I.info} 이 진단의 추론 과정 기록이 없어요. (이전 기록이거나 재진단이 필요해요.)</p></div>`;
