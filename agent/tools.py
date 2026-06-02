@@ -37,6 +37,25 @@ def _ev_record(eid, source, raw, **meta):
                           content_hash=hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:16],
                           **allowed).model_dump()
 
+
+# item 7: 법정 결정상수 provenance(완전제거 아니라 추적 — 어느 법조·기준·확인). 값=계산기 상수로 코드 상존(U7 합의), 출처는 부착.
+_STATIC_PROV = {
+    "energy_500": (500.0, "녹색건축물 조성 지원법 시행령 제10조"),
+    "struct_200": (200.0, "건축법 시행령 제32조"),
+    "struct_2f": (2.0, "건축법 시행령 제32조"),
+    "nongji_cap_50000": (50000.0, "농지법 시행규칙 제47조의2"),
+}
+def _static_ev(*const_ids):
+    """법정상수 provenance를 evidence_records용 dict로(source='static', claim_type=calculation_basis에만 인용 가능). 현행 원문 확인은 LLM 몫."""
+    out = {}
+    for cid in const_ids:
+        if cid not in _STATIC_PROV:
+            continue
+        v, law = _STATIC_PROV[cid]
+        eid = f"static:{cid}"
+        out[eid] = _ev_record(eid, "static", f"{cid}={v} (근거 {law}; 코드 결정상수·현행 원문/시행일 확인 필요)", law_id=law)
+    return out
+
 # 지목 28종 부호→정식명 전수(공간정보관리법 시행령 §58). VWorld jibun이 부호 1자만 줄 때 정규화 — 부분매핑 desync 방지.
 # (정식명 토큰은 키가 아니므로 .get(t,t)로 그대로 통과 = 이미 정규형. 의제·부담금 유형 결정은 LLM 위임.)
 _JIMOK = {"전": "전", "답": "답", "과": "과수원", "목": "목장용지", "임": "임야",
@@ -484,8 +503,13 @@ def compute_scale(floor_area: float, floor_count: int, tool_call_id: Annotated[s
     sl = ScaleLimit(energy_saving_required=floor_area >= 500,
                     structural_safety_required=(floor_area >= 200 or floor_count >= 2),
                     notes=[f"연면적 {floor_area}㎡·{floor_count}층"]).model_dump()
-    return Command(update={"scale_limits": sl, "_toolcalls": ["compute_scale"],
-                           "messages": [_tm(f"규모상한: 에너지={sl['energy_saving_required']} 구조안전={sl['structural_safety_required']}(근거조문은 law_article_fetch로 인용)", tool_call_id)]})
+    _ev = {}   # item 7: 적용된 법정상수 provenance(static:) 적재 — 현행 원문은 LLM이 law_article_fetch로 확인
+    if floor_area >= 500:
+        _ev.update(_static_ev("energy_500"))
+    if floor_area >= 200 or floor_count >= 2:
+        _ev.update(_static_ev("struct_200", "struct_2f"))
+    return Command(update={"scale_limits": sl, "evidence_records": _ev, "_toolcalls": ["compute_scale"],
+                           "messages": [_tm(f"규모상한: 에너지={sl['energy_saving_required']} 구조안전={sl['structural_safety_required']}(근거조문은 law_article_fetch로 인용; 코드 임계 provenance=static)", tool_call_id)]})
 
 
 @tool
@@ -523,14 +547,20 @@ def normalize_area(value: float, unit: str, tool_call_id: Annotated[str, Injecte
 
 @tool
 def parking_quota(use_type: str, floor_area: float, base_area_m2: float,
-                  tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+                  evidence_id: Annotated[str, Field(description="기준면적(base_area_m2)을 읽은 근거 evidence_id — law_byeolpyo_fetch가 ToolMessage 머리에 준 '근거ID:...'. state에 실재해야(임의 값 차단).")] = "",
+                  state: Annotated[dict, InjectedState] = None,
+                  tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
     """부설주차장 소요대수(법 산식만, 결정적). 소요대수 = ceil_05(시설면적 ÷ 용도별 기준면적). 비고6: 산정 0.5이상→올림 1대.
-    **base_area_m2(용도별 기준면적, ㎡/대)는 인자 — LLM이 law_byeolpyo_fetch로 주차장법 시행령 별표1에서 해당 용도의 기준면적을 읽어 전달**(도구에 용도→기준면적 하드코딩 없음, 예시값도 안 박음 — 반드시 별표1 원문 숫자).
-    조례 강화배율은 별도(미반영 시 확인필요). 면적형 기준만 — 골프 홀·수영장 정원 등 비면적형은 비대상."""
+    **base_area_m2(용도별 기준면적, ㎡/대)는 인자 — LLM이 law_byeolpyo_fetch로 주차장법 시행령 별표1에서 해당 용도의 기준면적을 읽어 전달**(도구에 용도→기준면적 하드코딩 없음). **그 별표1 근거 evidence_id를 함께 전달**(없으면 임의 값 차단·산출 안 함). 조례 강화배율 별도(미반영 시 확인필요)."""
+    state = state or {}
     if not base_area_m2 or base_area_m2 <= 0:
         return Command(update={"parking_req": {"status": "확인필요", "note": "기준면적(base_area_m2) 미전달 — 시행령 별표1서 용도별 기준면적 읽어 재호출"},
                                "_toolcalls": ["parking_quota"],
                                "messages": [_tm("부설주차 확인필요: 용도별 기준면적 필요(별표1)", tool_call_id)]})
+    if not evidence_id or evidence_id not in collect_evidence_ids(state):   # item 7: 기준면적 값 근거 실재 검증(날조 차단)
+        return Command(update={"parking_req": {"status": "확인필요", "note": "기준면적 근거(evidence_id) 미동반/미실재 — 주차장법 별표1 fetch 후 그 근거ID와 함께 재호출"},
+                               "_toolcalls": ["parking_quota"],
+                               "messages": [_tm("부설주차 확인필요: 기준면적 근거(evidence_id) 필요", tool_call_id)]})
     raw = floor_area / base_area_m2
     spaces = math.ceil(raw) if (raw - math.floor(raw)) >= 0.5 or raw == math.floor(raw) else math.floor(raw)
     # 비고6: 산정대수 소수 0.5이상이면 1대로 본다 → 위 ceil_05. 단 floor가 0이고 0.5미만이면 0대.
@@ -546,30 +576,36 @@ def parking_quota(use_type: str, floor_area: float, base_area_m2: float,
 
 @tool
 def levy_estimate(levy_type: str, land_price: Optional[float] = None, area_m2: Optional[float] = None,
-                  rate_pct: Optional[float] = None, *,
-                  tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+                  rate_pct: Optional[float] = None,
+                  evidence_id: Annotated[str, Field(description="율(rate_pct)을 읽은 근거 evidence_id(law_article_fetch가 준 '근거ID:...'). 농지 산출엔 필수·실재(임의 율 차단).")] = "",
+                  state: Annotated[dict, InjectedState] = None,
+                  tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
     """부담금 추정(법 산식만, 결정적). 단가·율이 없으면 금액 미산출+확인필요(날조 금지).
-    농지보전부담금 = 개별공시지가 × 율% × 면적 [농지법§38·시행령§53①; **rate_pct는 LLM이 §53서 읽어 전달 — 농업진흥지역 안/밖으로 율이 갈리니 원문 확인(예시값 안 박음)**]. ㎡당 상한 5만원(시행규칙§47의2)은 법정상한 상수로 적용.
+    농지보전부담금 = 개별공시지가 × 율% × 면적 [농지법§38·시행령§53①; **rate_pct는 LLM이 §53서 읽어 전달 — 농업진흥지역 안/밖으로 율이 갈리니 원문 확인. 그 근거 evidence_id 동반(없으면 산출 안 함)**]. ㎡당 상한 5만원(시행규칙§47의2)은 법정상한 상수(provenance=static).
     대체산림자원조성비 = 면적 × 산림청 고시단가 [**단가 데이터원 없음→금액 미산출, 확인필요**].
     개발부담금 = 종료시점지가−개시시점지가−정상상승분−개발비용 [**설계前 산정 구조적 불가→부과대상·근거조문만**].
     도구는 용도지역→율, 연도→단가 같은 하드코딩 없음 — 값은 전부 인자."""
+    state = state or {}
     lt = _S(levy_type)
+    _lev_static = {}
     if "농지" in lt:
         formula = "개별공시지가 × 율% × 면적(㎡당 5만원 상한)"
-        if land_price and area_m2 and rate_pct:
+        _rate_ok = bool(rate_pct) and bool(evidence_id) and evidence_id in collect_evidence_ids(state)   # item 7: 율 근거 실재 검증
+        if land_price and area_m2 and _rate_ok:
             amt = int(land_price * (rate_pct / 100.0) * area_m2)
-            cap = int(50000 * area_m2)   # 시행규칙§47의2 ㎡당 5만원 상한
+            cap = int(50000 * area_m2)   # 시행규칙§47의2 ㎡당 5만원 상한(static provenance)
             capped = amt > cap
             amt = min(amt, cap)
+            _lev_static = _static_ev("nongji_cap_50000")
             li = LevyItem(levy_type="농지보전부담금", formula=formula, amount=amt, status="산출",
                           note=f"공시지가 {int(land_price)}×{rate_pct}%×{area_m2}㎡" + ("(5만원/㎡ 상한 적용)" if capped else ""),
                           citation=Citation(source="law", law_name="농지법", article="§38·시행령§53①",
-                                            quote=f"율 {rate_pct}%(농지법 시행령§53)·㎡당 5만원 상한(시행규칙§47의2)")).model_dump()
+                                            quote=f"율 {rate_pct}%(농지법 시행령§53)·㎡당 5만원 상한(시행규칙§47의2)", source_id=evidence_id)).model_dump()
             msg = f"농지보전부담금 ≈ {amt:,}원 ({formula}, 율 {rate_pct}%)"
         else:
             li = LevyItem(levy_type="농지보전부담금", formula=formula, status="확인필요",
-                          note="율(rate_pct)·공시지가·면적 필요 — 농지법 시행령§53에서 농업진흥지역 안/밖 율을 읽어 재호출(값은 원문에서)").model_dump()
-            msg = "농지보전부담금: 산식만(율·공시지가·면적 필요)"
+                          note="율(rate_pct)·공시지가·면적 + 율 근거 evidence_id 필요 — 농지법 시행령§53에서 농업진흥지역 안/밖 율을 읽어(law_article_fetch) 그 근거ID와 함께 재호출").model_dump()
+            msg = "농지보전부담금: 산식만(율·공시지가·면적·근거ID 필요)"
     elif "산림" in lt or "대체" in lt:
         li = LevyItem(levy_type="대체산림자원조성비", formula="면적 × 산림청 고시단가(보전산지/준보전산지 등급별 할증 적용)",
                       status="확인필요", note="단가=산림청 매년 고시(법령·API 밖) → 금액 미산출",
@@ -588,6 +624,8 @@ def levy_estimate(levy_type: str, land_price: Optional[float] = None, area_m2: O
     upd = {"levies": [li], "_toolcalls": ["levy_estimate"], "messages": [_tm(msg, tool_call_id)]}
     if li.get("citation"):
         upd["citations"] = [li["citation"]]
+    if _lev_static:   # item 7: 5만원 상한 provenance(static) 적재
+        upd["evidence_records"] = _lev_static
     return Command(update=upd)
 
 
@@ -612,15 +650,18 @@ def author_rule_tool(floor_area: float, work_type: str, tool_call_id: Annotated[
 @tool
 def reg_effect_resolve_tool(reg_names: List[str], tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """규제명→근거 법령조문 라이브 조회(시드+검색). resolve(reg_names)."""
-    out, eff = REG.resolve(reg_names), []
+    out, eff, ev = REG.resolve(reg_names), [], {}
     for r in out:
         if r["상태"] == "근거확보":
+            # item 13b: reg fetch도 EvidenceRecord 적재(evidence_id=law:법령|조) — record_reg_resolution이 이 근거ID로 basis_claims 인용 가능. raw=조문제목(전문은 law_article_fetch로).
+            _eid = _ev_id("law", f"{r['법령']}|{r['조']}", r["규제"])
+            ev[_eid] = _ev_record(_eid, "law", str(r.get("제목", "")), law_id=r["법령"], truncated=True)   # 제목만=잘린 근거(truncated) → positive 단정엔 전문 필요
             eff.append(RegEffect(reg_name=r["규제"], law_name=r["법령"], article=r["조"], effect=r["제목"], status="근거확보").model_dump())
         else:   # 미해결(확인필요)도 보존 — 최종 카드서 사라지지 않게 정직 노출(fail-closed)
             eff.append(RegEffect(reg_name=r["규제"], effect=r.get("근거", ""), status="확인필요").model_dump())
     n_ok = sum(1 for r in out if r["상태"] == "근거확보")
-    return Command(update={"reg_effects": eff, "_toolcalls": ["reg_effect_resolve_tool"],
-                           "messages": [_tm(f"규제효과 {n_ok}건 근거확보·{len(out) - n_ok}건 확인필요(/{len(out)})", tool_call_id)]})
+    return Command(update={"reg_effects": eff, "evidence_records": ev, "_toolcalls": ["reg_effect_resolve_tool"],
+                           "messages": [_tm(f"규제효과 {n_ok}건 근거확보·{len(out) - n_ok}건 확인필요(/{len(out)}) — 근거확보는 조문제목만(truncated); 전문·영향판정은 law_article_fetch 후 record_reg_resolution", tool_call_id)]})
 
 
 # ── agent 판단 커밋 (record_*) ───────────────────────────────
