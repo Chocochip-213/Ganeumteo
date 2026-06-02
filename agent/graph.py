@@ -99,7 +99,12 @@ def completeness_guard(state):
     if state.get("pnu"):   # substantive diagnosis(입지 확보)에서만 절차/완료 게이트 — geocode 실패·잡담은 면제(item 10 조건부)
         # item 10: 절차판정 선행(신축3단계 기본값 제거) — record_procedure_steps 없으면 절차 누락(비신축 신축흐름 강제 안 함)
         if "record_procedure_steps" not in called:
-            miss.append("절차판정(record_procedure_steps 호출 — 인허가 단계 타임라인)")
+            # 프레임 미검토 채 절차 미커밋이면 프레임부터 환기(표준 단계 누락 방지). 프레임 받았으면 단계 구성은 LLM 자율
+            # — 단계집합·phase 망라를 하드 검사하지 않는다(그러면 코드가 절차 verdict를 박음=무하드코딩 위반). 망라성은 프레임+근거게이트 소프트압력.
+            if "procedure_framework_tool" not in called:
+                miss.append("절차프레임(procedure_framework_tool 호출 — 표준 건축행정절차 단계 체크리스트 받기)")
+            else:
+                miss.append("절차판정(record_procedure_steps 호출 — 프레임 각 단계 applies 판정)")
         # 서류 = 적용 절차(requires_documents=true) + 의제 stage만 요구(신축 가정 제거). list_status=전수확보만 커버(실패=미커버).
         proc = [p for p in state.get("procedure_steps", []) if isinstance(p, dict) and p.get("applies") != "no"]
         doc_stages = {d.get("stage_key") for d in state.get("documents", []) if d.get("list_status", d.get("status")) == "전수확보"}

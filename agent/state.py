@@ -335,6 +335,7 @@ class GaneomteoState(TypedDict):
     # ── 근거계약·신규 산출 (MASTER_PLAN item 0 토대; append-only/merge, latest selector로 읽음 — 0g)
     evidence_records: Annotated[dict, _merge_evidence]     # evidence_id → EvidenceRecord(원문 store, quote 실재검증 토대 0b-2)
     procedure_steps: Annotated[list, _merge_steps]        # 인허가 절차 타임라인(record_procedure_steps) — documents와 분리(item 10)
+    procedure_frame: NotRequired[list]                    # procedure_framework_tool 라우팅 산출(표준단계+법조 포인터) — 체크리스트, last-write 충분(reducer 불요)
     landuse_resolutions: Annotated[list, operator.add]    # record_landuse_resolution(행위제한 LLM 판정) — 코드 act_verdict 긍정 대체(item 3)
     use_classifications: Annotated[list, operator.add]    # record_use_classification(생활어→canonical use 별표1, item 4)
     work_type_resolutions: Annotated[list, operator.add]  # record_work_type(WorkTypeResolution 구조화) — 맹지/절차 게이트가 읽는 단일원(item 9·0d)
