@@ -848,14 +848,21 @@ def record_ordinance_ruling(
             description="조례 별표 호목해소 결론. 가능=제공된 별표 원문 호목이 해당 용도를 명시적으로 허용. "
                         "불가=원문이 명시적으로 금지. 확인필요=별표 본문 미확보·호목 참조 미해소·근거 불충분 등 판단 불가(기본값, 기권).")],
         hojeok_path: str, cited_count: int, relied_source_ids: list,
-        tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+        state: Annotated[dict, InjectedState] = None,
+        tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
     """agent 멀티홉 호목해소 결론 커밋. verdict는 위 3개 enum 중 하나만(자유서술 금지).
-    relied_source_ids = 이 판정이 의존한 근거ID들(ToolMessage 머리의 '근거ID:...'를 그대로). 그 근거 별표가 표시한도서 잘렸으면(truncated) '가능/불가' 단정이 자동 강등(확인필요)된다 → 잘린 별표면 더 좁은 번호로 재호출해 전문 확보 후 단정하라.
-    환각가드: '가능/불가' 단정은 인용근거(cited_count≥1) 필수(precondition) + build_reasoning(basis·truncated_basis)·route(citations==0→abstain) 다층."""
-    if verdict in ("가능", "불가") and cited_count < 1:   # 근거 없는 단정 거부 — 재호출 유도(_toolcalls 안 남겨 retry 열어둠)
-        return Command(update={"_reject_count": 1, "messages": [_tm(
-            f"<tool_use_error>'{verdict}' 단정은 인용 근거가 필요(cited_count≥1). 별표 원문 호목을 인용해 다시 커밋하거나, 근거 없으면 verdict='확인필요'로 커밋하라.</tool_use_error>", tool_call_id)]})
+    relied_source_ids = 이 판정이 의존한 근거ID들(ToolMessage 머리의 '근거ID:...'를 그대로 — state에 실재해야, 허위 거부). 그 근거 별표가 잘렸으면(truncated) '가능/불가'가 자동 강등(확인필요)된다.
+    환각가드: '가능/불가' 단정은 인용근거(cited_count≥1)+relied_source_ids 실재 필수 + build_reasoning(basis·truncated_basis)·route(citations==0→abstain) 다층."""
+    state = state or {}
     _sids = [str(s) for s in (relied_source_ids or []) if s]
+    if verdict in ("가능", "불가"):
+        if cited_count < 1:   # 근거 없는 단정 거부 — 재호출 유도(_toolcalls 안 남겨 retry 열어둠)
+            return Command(update={"_reject_count": 1, "messages": [_tm(
+                f"<tool_use_error>'{verdict}' 단정은 인용 근거가 필요(cited_count≥1). 별표 원문 호목을 인용해 다시 커밋하거나, 근거 없으면 verdict='확인필요'로 커밋하라.</tool_use_error>", tool_call_id)]})
+        _unreal = [s for s in _sids if s not in collect_evidence_ids(state)]   # §6a: relied도 state 실재 evidence여야(허위 근거ID 차단)
+        if not _sids or _unreal:
+            return Command(update={"_reject_count": 1, "messages": [_tm(
+                f"<tool_use_error>'{verdict}' 단정의 relied_source_ids가 비었거나 미실재({_unreal[:3]}). 별표/법령을 fetch한 근거ID(ToolMessage '근거ID:...')만 달아라(지어내면 거부).</tool_use_error>", tool_call_id)]})
     return Command(update={"jorye_verdicts": [JoryeVerdict(verdict=verdict, reason=hojeok_path[:200], relied_source_ids=_sids).model_dump()],
                            "_toolcalls": ["record_ordinance_ruling"], "_reject_count": 0,
                            "messages": [_tm(f"조례판정 기록: {verdict} ({hojeok_path})", tool_call_id)]})

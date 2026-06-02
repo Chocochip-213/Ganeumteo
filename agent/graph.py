@@ -383,6 +383,7 @@ def compose(state):
 _STATUS = {"completed": "완료", "verdict_resolved": "조기종료", "need_human": "사람검토",
            "step_capped": "부분완료(단계 한도)", "no_grounds": "근거 부족(확인필요)", "context_overflow": "재시도필요(컨텍스트 초과)",
            "record_loop": "확인필요(판정 근거 반복 미확보)",
+           "tool_budget_exhausted": "부분완료(추가 조사 한도 — 미해결 잔존)",   # 0f: 캡 도달 미해결 — completed와 구분(status≠완료)
            "site_geocode_failed": "재입력필요", "fallback_extract_failed": "부분완료",
            "error": "부분완료", "aborted": "중단", "llm_error": "재시도필요"}
 
