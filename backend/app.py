@@ -37,12 +37,15 @@ def diagnose_stream(address: str, use_type: str = "", floor_area: float = None, 
 
 @app.get("/diagnose/resume")
 def diagnose_resume(thread_id: str, request: Request, reject: bool = False):
-    _, cfg = make_config(thread_id)
+    _, cfg = make_config(thread_id)   # thread_id 형식 검증(make_config) — 불일치면 새 id(기존 thread 미접근)
     if reject:
         resume = {"type": "reject"}
     else:
-        # 에이전트가 요청한 임의 필드를 그대로 왕복(confirm_*, correct_* 등 — floor/use에 한정 안 함)
-        resume = {k: v for k, v in request.query_params.items() if k not in ("thread_id", "reject")}
+        # 에이전트가 요청한 임의 필드를 그대로 왕복(confirm_*, correct_* 등). item 16: resume schema 검증 — 키 수·값 크기 캡(악의적 대량/거대 페이로드 차단)
+        raw = {k: v for k, v in request.query_params.items() if k not in ("thread_id", "reject")}
+        if len(raw) > 20 or any(len(str(v)) > 2000 for v in raw.values()):
+            return JSONResponse(status_code=400, content={"error": "resume payload too large (키≤20·값≤2000자)"})
+        resume = {str(k)[:100]: str(v)[:2000] for k, v in raw.items()}
     return StreamingResponse(sse.run_stream(GRAPH, None, cfg, resume=resume),
                              media_type="text/event-stream", headers=_SSE_HEADERS)
 
