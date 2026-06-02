@@ -311,7 +311,7 @@ class GaneomteoState(TypedDict):
     land_area: NotRequired[Optional[float]]   # 대지면적 lndpclAr(㎡) — get_land_use가 추출, 부담금·envelope 입력
     reg_overlaps: Annotated[list, operator.add]
     # ── 판정
-    act_verdict: NotRequired[str]
+    act_landuse_raw: NotRequired[str]   # act_landuse 원시 신호(REG_NM·NODE_DESC detail) — 표시/probe만, verdict 입력 아님(item 3 rename·재오염 방지)
     act_reg_raw: NotRequired[list]
     _delegated: NotRequired[bool]
     doc_index_hit: NotRequired[bool]   # 조례 RAG 인덱스 HIT 여부(가늠터 UI 트레이스 노출)

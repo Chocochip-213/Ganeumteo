@@ -35,7 +35,8 @@ def _wrap_tool_call(request, execute):
 _STEP_HARDCAP = 24      # agent 방문 하드캡(무한루프 방지)
 _GUARD_BOUNCE_CAP = 19  # 이 이상이면 guard 바운스 중단(진행)
 _REJECT_CAP = 3         # record 도구 연속 거부 N회면 doom-loop 조기종료(확인필요). step-cap(over≥36)으로도 종료되나 그 전에 끊어 ~32왕복 낭비차단 + 정직한 종료사유(record_loop). '무한방지'가 아니라 '조기종료'(검수B 실측: U1없이도 36왕복서 step_capped 종료)
-_RECORD_TOOLS = {"record_verdict", "record_ordinance_ruling", "record_reg_resolution"}   # 판정/해소 커밋 도구(근거없는 단정 거부→U1 doom-loop 반복추적 대상)
+_RECORD_TOOLS = {"record_verdict", "record_ordinance_ruling", "record_reg_resolution",
+                 "record_use_classification", "record_landuse_resolution"}   # 판정/해소/분류 커밋 도구(근거없는 단정 거부→U1 doom-loop 반복추적 대상)
 
 
 def _norm_ho(ho):
@@ -127,7 +128,7 @@ def route_after_guard(state):
     if state.get("_incomplete"):
         return "agent"
     substantive = [c for c in state.get("citations", []) if c.get("source") in ("law", "ordin", "data")]
-    if not substantive and not state.get("act_verdict"):   # #7 판정 근거 전무(vworld 입지만)→기권
+    if not substantive and not state.get("landuse_resolutions"):   # #7 판정 근거 전무(vworld 입지만)→기권. act_verdict 코드신호 대신 LLM 커밋(landuse_resolution)·substantive citation으로 판단(item 3)
         return "abstain"
     return "build_reasoning"
 
@@ -145,9 +146,10 @@ def _derive_verdict(state):
         if v in ("불가", "위험·금지"):
             return "위험·금지"
         return "확인필요"
-    if state.get("act_verdict") == "가능(법령직접)":   # 도구계약 enum 정확비교(substring 금지)
+    lr = _latest_landuse(state)   # item 3: 코드 API 승격(act_verdict) 제거 → LLM이 record_landuse_resolution로 커밋한 '가능'만 긍정
+    if lr and lr.get("status") == "가능":
         return "가능(조건부)" if conditional else "가능"
-    return "확인필요"  # 입지 미확보(API실패)도 여기 = 안전 degrade(거짓 가능 방지)
+    return "확인필요"  # 입지 미확보·행위제한 미판정도 여기 = 안전 degrade(거짓 가능 방지)
 
 
 def _resolved_regs(state):
@@ -164,6 +166,12 @@ def _resolved_regs(state):
     return out
 
 
+def _latest_landuse(state):
+    """record_landuse_resolution 최신 1엔트리(마지막 커밋). 없으면 None. 코드 act_verdict 승격 대체(item 3) — 행위제한 판정 입력은 이것만."""
+    lrs = [l for l in (state.get("landuse_resolutions") or []) if isinstance(l, dict)]
+    return lrs[-1] if lrs else None
+
+
 def build_reasoning(state):
     """결정적 논증 골격(부록 E). 각 단계 citation. 서술은 (실 LLM) compose가."""
     steps, seq = [], 0
@@ -172,8 +180,13 @@ def build_reasoning(state):
         return {"seq": seq, "kind": kind, "fact": fact, "basis": basis,
                 "infer": infer, "leads": leads, "status": "확정" if basis else "확인필요"}
     steps.append(add("입지", f"지목={state.get('jimok')} 용도지역={state.get('zone')} 도로접면={state.get('road_side')}", "vworld"))
-    if state.get("act_verdict"):
-        steps.append(add("행위제한", f"{state.get('zone')} {state['use_type']}", "data.go.kr 1613000", state.get("act_verdict")))
+    _lr = _latest_landuse(state)   # item 3: 행위제한 row는 LLM 판정(record_landuse_resolution)만 근거. act_landuse_raw는 probe(확정 아님).
+    if _lr:
+        _lok = _lr.get("status") in ("가능", "불가", "조건필요")   # LLM 커밋 판정=확정(근거), 확인필요=확인필요
+        steps.append(add("행위제한", f"{state.get('zone')} {_lr.get('intended_use') or state.get('use_type')}",
+                         "data.go.kr 1613000" if _lok else None, _lr.get("status", "")))
+    elif state.get("act_landuse_raw"):   # raw 조회만(판정 미커밋) → 확정 아님
+        steps.append(add("행위제한", f"{state.get('zone')} {state.get('use_type')}", None, "raw 조회만(판정 미커밋)"))
     for jv in state.get("jorye_verdicts", []):
         steps.append(add("조례호목해소", jv.get("ordin_name") or "조례 별표",
                          "ordin" if jv.get("verdict") != "확인필요" else None, jv.get("reason", ""), jv.get("verdict", "")))
@@ -338,7 +351,7 @@ def abstain(state):
         else:
             over = state.get("_steps", 0) - state.get("_turn_base_steps", 0)
             subst = [c for c in state.get("citations", []) if c.get("source") in ("law", "ordin", "data")]
-            tr = "step_capped" if over >= _STEP_HARDCAP else ("no_grounds" if (not subst and not state.get("act_verdict")) else "need_human")
+            tr = "step_capped" if over >= _STEP_HARDCAP else ("no_grounds" if (not subst and not state.get("landuse_resolutions")) else "need_human")
     return {"terminal_reason": tr,
             "_card": {"verdict": "확인필요", "terminal": tr,
                       "사유": state.get("abstentions") or "근거(citation) 0건",

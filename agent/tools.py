@@ -136,28 +136,25 @@ def get_land_price(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -
 
 @tool
 def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
-                tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
-    """행위제한 1차판정 + 조례위임 감지. data.go.kr 1613000.
-    입력: zone_ucode=get_land_use의 UQ코드 **전부를 콤마로 이어** 그대로(예 UQA001,UQA121 — 상위 generic 코드는 빈값이라 API가 specific 코드에서 행위제한 회수). use_type=**건축법 별표1의 가장 구체적인 세목 시설명**(사용자 표현을 그 세목명으로 해석 — 예 카페→일반음식점, 사무실→업무시설, 다세대→공동주택). **주의: 이 API는 시설명을 부분문자열로 매칭한다** → 넓은 상위분류('운동시설')로 질의하면 엉뚱한 세목('가축용 운동시설')이 substring으로 잡힐 수 있다. 반드시 구체 세목으로 질의하고, 반환된 시설명(NODE_DESC)이 의도한 시설과 다르면 그 결과를 근거로 쓰지 말고 별표1 호목으로 직접 해소하라. area_cd=get_parcel의 area_cd(PNU 앞5).
-    반환 act_verdict∈{가능(법령직접), 조례확인필요(혼재), 조례확인필요(조건부), 조례확인필요}. 빈값·혼재·조건부=조례위임(_delegated=True) → 단정 말고 ordin_byeolpyo_fetch로 진행."""
-    det = W.act_detail(zone_ucode, use_type, area_cd)   # item별 reg+근거조항+시설명 — act가 버리던 근거 보존
-    rg = [d["reg"] for d in det]                          # 가부 신호(REG_NM=API 자체 판정 enum; 도구는 읽기만, 단정 아님)
-    # REG_NM(API 자체판정 enum={가능,금지,조건,빈값}) 정밀독 — 값 그대로 읽음(도구는 enum 읽기만, 단정 아님).
-    has_y = any("가능" in x for x in rg)      # '가능'
-    has_n = any("금지" in x for x in rg)      # '금지'=부정/조례위임
-    has_cond = any("조건" in x for x in rg)   # '조건'=조건부 건축(별표서 조건 확인)
-    if has_y and not has_n and not has_cond:
-        v, dele = "가능(법령직접)", False
-    elif has_y and has_n:
-        v, dele = "조례확인필요(혼재)", True    # 가능·금지 혼재 → 단정 금지
-    elif has_cond:
-        v, dele = "조례확인필요(조건부)", True   # 조건 → 조례·별표서 조건 확인(단정 금지)
-    elif has_n:
-        v, dele = "조례확인필요", True          # 금지=입지제한/조례위임 가능성
-    else:
-        v, dele = "조례확인필요", True          # 빈값=조례 위임
-    # 인용 정리: 같은 (조항·시설)끼리 묶어 중복 UQ코드 제거 + 가능/금지 혼재(용도지역 중첩)는 한 줄로 정직 표기
-    _grp = {}                                    # (ref_law,node) → set(reg)
+                state: Annotated[dict, InjectedState] = None,
+                tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
+    """행위제한 API **raw 조회**(data.go.kr 1613000) — 코드는 가부를 단정/승격하지 않는다(_delegated=True, item 3).
+    **선결**: 먼저 record_use_classification로 생활어(카페/피시방/사무소)를 건축법 시행령 별표1 canonical 세목으로 확정하고, 그 canonical을 use_type으로 넘겨라(코드가 생활어→세목 매핑 안 함).
+    입력: zone_ucode=get_land_use UQ코드 전부 콤마결합. use_type=별표1 canonical 세목. area_cd=PNU 앞5.
+    **주의: 이 API는 시설명 부분문자열 매칭** → 반환 NODE_DESC가 의도 세목과 다르면 그 결과를 긍정근거로 쓰지 마라. 가능/불가/조건 판정은 NODE_DESC↔intended_use 일치를 네가 확인한 뒤 record_landuse_resolution로 커밋(코드는 raw만 저장)."""
+    state = state or {}
+    # 선결 가드(item 4): UseClassification 없으면 act 진행 차단(코드가 생활어→세목 매핑 못 함 — LLM이 별표1로 확정 먼저)
+    if not [u for u in (state.get("use_classifications") or []) if isinstance(u, dict)]:
+        return Command(update={"messages": [_tm(
+            "<tool_use_error>act_landuse 선결 미충족: record_use_classification로 생활어→건축법 시행령 별표1 canonical 세목을 먼저 확정하라. 그 canonical 세목을 use_type으로 넘겨라.</tool_use_error>", tool_call_id)]})
+    det = W.act_detail(zone_ucode, use_type, area_cd)   # item별 reg+근거조항+시설명(NODE_DESC) — raw evidence 보존
+    rg = [d["reg"] for d in det]
+    # REG_NM(API 자체판정 enum) 신호만 표기 — 코드는 가부 생성 안 함(가능(법령직접) 승격 제거). 전부 _delegated → LLM이 record_landuse_resolution로 판정.
+    has_y = any("가능" in x for x in rg); has_n = any("금지" in x for x in rg); has_cond = any("조건" in x for x in rg)
+    raw_signal = f"REG_NM신호 가능={'有' if has_y else '無'}·금지={'有' if has_n else '無'}·조건={'有' if has_cond else '無'}"
+    eid = _ev_id("api", "act_landuse", zone_ucode, use_type, area_cd)   # 안정 evidence_id(같은 입력=같은 ID)
+    ev = {eid: _ev_record(eid, "api", json.dumps(det, ensure_ascii=False), source_url="data.go.kr/1613000")}
+    _grp = {}
     for d in det:
         if d.get("ref_law"):
             _grp.setdefault((d["ref_law"], d.get("node", "")), set()).add(d["reg"])
@@ -166,13 +163,13 @@ def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
         q = (f"{node} → 가능·금지 혼재(용도지역 중첩)"
              if any("가능" in r for r in regs) and any("금지" in r for r in regs)
              else f"{node} → {'/'.join(sorted(regs))}")
-        cites.append(Citation(source="data", law_name="행위제한(국토부 1613000)", article=ref_law, quote=q).model_dump())
+        cites.append(Citation(source="data", law_name="행위제한(국토부 1613000)", article=ref_law, quote=q, source_id=eid).model_dump())
     detail = " / ".join(f"{d.get('node', '')}={d['reg']}({d.get('ref_law', '')})" for d in det) or "빈값"
-    upd = {"act_verdict": v, "act_reg_raw": rg, "_delegated": dele,
-           "citations": cites, "_toolcalls": ["act_landuse"],
-           "messages": [_tm(f"행위제한 {use_type}@{zone_ucode}: {detail} → {v}", tool_call_id)]}
-    if not det:   # 직접근거 0 — API 빈응답/세목 불일치/조례위임 구분불가 → 정직 기권(트레이스 '확보' 오표기 방지, 검수 EB-2)
-        upd["abstentions"] = [{"node": "act_landuse", "사유": f"행위제한 직접 근거 없음({use_type}) — 조례로 확인 필요"}]
+    upd = {"act_landuse_raw": f"{raw_signal} | {detail}", "act_reg_raw": rg, "_delegated": True,
+           "citations": cites, "evidence_records": ev, "_toolcalls": ["act_landuse"],
+           "messages": [_tm(f"행위제한 raw {use_type}@{zone_ucode}: {detail} ({raw_signal}) — NODE_DESC↔의도용도 일치 확인 후 record_landuse_resolution로 판정하라(근거ID:{eid})", tool_call_id)]}
+    if not det:   # 직접근거 0 — API 빈응답/세목 불일치 → 정직 기권(별표/조례로 확인)
+        upd["abstentions"] = [{"node": "act_landuse", "사유": f"행위제한 직접 근거 없음({use_type}) — 별표/조례로 확인 필요"}]
     return Command(update=upd)
 
 
@@ -665,6 +662,62 @@ def record_reg_resolution(
 
 
 @tool
+def record_use_classification(
+        original_use: str, canonical_use: str, law_basis: str,
+        basis_claims: Annotated[list, Field(description="별표1 근거계약 [{field_path,claim_type,evidence_id,support_role,quote_or_span}]. status=확정은 필수·실재(law_byeolpyo_fetch로 별표1 먼저 확보).")] = None,
+        status: Annotated[Literal["확정", "확인필요"], Field(description="확정=별표1 근거로 canonical 세목 확정. 확인필요=모호(unresolved_by 동반).")] = "확인필요",
+        unresolved_by: Annotated[Literal["none", "agent", "user", "authority", "data_unavailable"], Field(description="확인필요면 누가 푸나(필수).")] = "none",
+        state: Annotated[dict, InjectedState] = None,
+        tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
+    """생활어(카페/피시방/사무소)를 건축법 시행령 별표1 canonical 세목(휴게음식점/인터넷컴퓨터게임시설제공업소/업무시설 등)으로 확정 커밋 — act_landuse 선결.
+    코드는 생활어→세목 매핑을 안 한다(네가 별표1 fetch해 확정). status=확정은 별표1 근거(basis_claims) 필수·실재."""
+    state = state or {}
+    claims = [c for c in (basis_claims or []) if isinstance(c, dict)]
+    ub = unresolved_by if unresolved_by in _UNRESOLVED_VALUES else "none"
+    if status == "확정":
+        ok, errs = validate_basis_claims(state, claims)
+        if not claims or not ok:
+            return Command(update={"_reject_count": 1, "messages": [_tm(
+                f"<tool_use_error>용도분류 '확정'은 건축법 시행령 별표1 근거(basis_claims) 필수·실재({'근거없음' if not claims else errs[:2]}). law_byeolpyo_fetch로 별표1 확보 후 그 evidence로 커밋하거나 status='확인필요'+unresolved_by로.</tool_use_error>", tool_call_id)]})
+    if status == "확인필요" and ub == "none":
+        return Command(update={"_reject_count": 1, "messages": [_tm(
+            "<tool_use_error>용도분류 '확인필요'는 unresolved_by(agent/user/...) 분류 필수 — bare 확인필요 금지.</tool_use_error>", tool_call_id)]})
+    uc = UseClassification(original_use=str(original_use)[:60], canonical_use=str(canonical_use)[:60],
+                           law_basis=str(law_basis)[:120], basis_claims=claims, status=status, unresolved_by=ub).model_dump()
+    return Command(update={"use_classifications": [uc], "_toolcalls": ["record_use_classification"], "_reject_count": 0,
+                           "messages": [_tm(f"용도분류 기록: {original_use} → {canonical_use} ({status}{'/'+ub if ub != 'none' else ''})", tool_call_id)]})
+
+
+@tool
+def record_landuse_resolution(
+        intended_use: str, matched_node_desc: str, api_reg_nm: str,
+        status: Annotated[Literal["가능", "불가", "조건필요", "확인필요"], Field(description="행위제한 판정. 가능=별표1/조례 근거로 허용. 불가=금지. 조건필요=조건부. 확인필요=세목불일치·근거불충분(unresolved_by 동반).")],
+        basis_claims: Annotated[list, Field(description="근거계약. 가능/불가/조건필요는 필수·실재. matched_node_desc가 intended_use와 다르면 가능 금지(세목 불일치).")] = None,
+        unresolved_by: Annotated[Literal["none", "agent", "user", "authority", "data_unavailable"], Field(description="확인필요면 누가 푸나(필수).")] = "none",
+        mismatch_reason: str = "",
+        state: Annotated[dict, InjectedState] = None,
+        tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
+    """행위제한 raw(act_landuse) 위에 **NODE_DESC↔intended_use 일치를 네가 확인**하고 가부를 커밋 — 코드 act_verdict 승격 대체(조례판정 record_ordinance_ruling과 별개).
+    가능/불가/조건필요 단정은 근거(basis_claims) 필수·실재. matched_node_desc가 의도 세목과 다르면 가능 금지(mismatch_reason 적고 확인필요/조례확인)."""
+    state = state or {}
+    claims = [c for c in (basis_claims or []) if isinstance(c, dict)]
+    ub = unresolved_by if unresolved_by in _UNRESOLVED_VALUES else "none"
+    if status in ("가능", "불가", "조건필요"):
+        ok, errs = validate_basis_claims(state, claims)
+        if not claims or not ok:
+            return Command(update={"_reject_count": 1, "messages": [_tm(
+                f"<tool_use_error>행위제한 '{status}' 단정은 근거(basis_claims) 필수·실재({'근거없음' if not claims else errs[:2]}). 별표1/조례 근거를 달거나 status='확인필요'+unresolved_by로.</tool_use_error>", tool_call_id)]})
+    if status == "확인필요" and ub == "none":
+        return Command(update={"_reject_count": 1, "messages": [_tm(
+            "<tool_use_error>행위제한 '확인필요'는 unresolved_by 분류 필수 — bare 확인필요 금지.</tool_use_error>", tool_call_id)]})
+    lr = LanduseResolution(intended_use=str(intended_use)[:60], matched_node_desc=str(matched_node_desc)[:120],
+                           api_reg_nm=str(api_reg_nm)[:40], status=status, unresolved_by=ub,
+                           basis_claims=claims, mismatch_reason=str(mismatch_reason)[:200]).model_dump()
+    return Command(update={"landuse_resolutions": [lr], "_toolcalls": ["record_landuse_resolution"], "_reject_count": 0,
+                           "messages": [_tm(f"행위제한 판정: {intended_use} → {status}{'/'+ub if ub != 'none' else ''}", tool_call_id)]})
+
+
+@tool
 def record_ordinance_ruling(
         verdict: Annotated[Literal["가능", "불가", "확인필요"], Field(
             description="조례 별표 호목해소 결론. 가능=제공된 별표 원문 호목이 해당 용도를 명시적으로 허용. "
@@ -825,5 +878,6 @@ TOOLS = [geocode, get_parcel, get_building_register, get_building_floors, get_la
          ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
          compute_envelope, normalize_area, parking_quota, levy_estimate,
          author_rule_tool, reg_effect_resolve_tool, record_uijae, record_reg_resolution, record_ordinance_ruling, record_verdict,
+         record_use_classification, record_landuse_resolution,
          request_human_input]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}

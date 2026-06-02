@@ -52,7 +52,7 @@ if __name__ == "__main__":
             print("  판정:", card.get("verdict"), "| terminal:", out.get("terminal_reason"))
             print("  입지: 지목=", out.get("jimok"), "용도지역=", out.get("zone"),
                   "도로접면=", out.get("road_side"), "공시지가=", out.get("land_price"))
-            print("  행위제한:", out.get("act_verdict"), out.get("act_reg_raw"))
+            print("  행위제한:", out.get("act_landuse_raw"), out.get("act_reg_raw"))
             print("  의제:", [u["permit_name"] for u in card.get("uijae", [])])
             print("  서류:", [(d["stage"], d["count"], d["status"]) for d in card.get("documents", [])])
             print("  규제효과:", [r["reg_name"] for r in (card.get("reg_effects") or [])][:5])

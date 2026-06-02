@@ -57,9 +57,13 @@ def stub_plan(state):
         return _call("get_land_use", {"pnu": pnu})
     if pnu and "land_price" not in state and "get_land_price" not in called:
         return _call("get_land_price", {"pnu": pnu})
-    if zone and "act_verdict" not in state and "act_landuse" not in called:
-        uc = ",".join(state.get("zone_ucodes") or [])   # 전체 UQ 콤마결합 — 상위 generic은 빈값, API가 specific서 행위제한 회수
-        return _call("act_landuse", {"zone_ucode": uc, "use_type": state["use_type"], "area_cd": state.get("area_cd", "")})
+    # 행위제한 선결(item 4): record_use_classification 먼저(생활어→별표1 canonical). stub은 LLM 아니라 확인필요/agent로 정직.
+    if zone and "record_use_classification" not in called:
+        return _call("record_use_classification", {"original_use": state["use_type"], "canonical_use": state["use_type"],
+                     "law_basis": "[stub] 별표1 호목 미해소(실 LLM 필요)", "status": "확인필요", "unresolved_by": "agent"})
+    if zone and "act_landuse_raw" not in state and "act_landuse" not in called:
+        _ucs = ",".join(state.get("zone_ucodes") or [])   # 전체 UQ 콤마결합 — 상위 generic은 빈값, API가 specific서 행위제한 회수
+        return _call("act_landuse", {"zone_ucode": _ucs, "use_type": state["use_type"], "area_cd": state.get("area_cd", "")})
     # 조례 멀티홉
     if state.get("_delegated") and "ordin_byeolpyo_fetch" not in called and state.get("sigungu"):
         return _call("ordin_byeolpyo_fetch", {"sigungu": state["sigungu"], "zone": zone})
