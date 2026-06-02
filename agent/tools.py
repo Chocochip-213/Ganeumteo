@@ -69,6 +69,11 @@ def _S(v):
     if isinstance(v, list): return " ".join(_S(x) for x in v)
     return str(v)
 def _tm(text, cid): return ToolMessage(text, tool_call_id=cid)
+def _aslist(v):
+    """LLM이 list 인자 자리에 문자열 1개를 주면 글자단위 분해(list('가나')=['가','나']) 방지 — str→[str], None→[], 그 외 iterable→list."""
+    if v is None: return []
+    if isinstance(v, str): return [v]
+    return list(v)
 
 
 # ── 입지 ─────────────────────────────────────────────────────
@@ -851,9 +856,9 @@ def record_procedure_steps(
             trigger=str(s.get("trigger", ""))[:120], action=str(s.get("action", ""))[:200], when_note=str(s.get("when_note", ""))[:200],
             deadline=str(s.get("deadline", ""))[:60], law_name=str(s.get("law_name", ""))[:60], article=str(s.get("article", ""))[:40],
             title_from_law=str(s.get("title_from_law", ""))[:120], quote=str(s.get("quote", ""))[:200], basis_claims=claims,
-            citation_ids=[str(x) for x in (s.get("citation_ids") or [])], related_document_stage_keys=[str(x) for x in (s.get("related_document_stage_keys") or [])],
+            citation_ids=[str(x) for x in _aslist(s.get("citation_ids"))], related_document_stage_keys=[str(x) for x in _aslist(s.get("related_document_stage_keys"))],
             requires_documents=bool(s.get("requires_documents")), source_api=str(s.get("source_api", ""))[:40],
-            notes=[str(x)[:120] for x in (s.get("notes") or [])]).model_dump())
+            notes=[str(x)[:120] for x in _aslist(s.get("notes"))]).model_dump())
     if not out:
         return Command(update={"messages": [_tm("<tool_use_error>record_procedure_steps: step_id 있는 절차 1개 이상 필요.</tool_use_error>", tool_call_id)]})
     return Command(update={"procedure_steps": out, "_toolcalls": ["record_procedure_steps"], "_reject_count": 0,
