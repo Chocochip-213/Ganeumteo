@@ -836,8 +836,9 @@ def record_work_type(
     if status == "확정":
         ok, errs = validate_basis_claims(state, claims)
         if not claims or not ok:
+            _uf = [f"user_fact:{k}" for k in (state.get("document_facts") or {})]   # 인용 가능한 실재 사용자답변 ID(거부 자기교정 — 라이브검출 거부루프 방지)
             return Command(update={"_reject_count": 1, "messages": [_tm(
-                f"<tool_use_error>work_type '확정'은 근거(basis_claims) 필수·실재({'근거없음' if not claims else errs[:2]}). 건축물대장(get_building_register) 또는 사용자 답변(user_fact) 근거로 커밋하거나 status='확인필요'+unresolved_by로.</tool_use_error>", tool_call_id)]})
+                f"<tool_use_error>work_type '확정'은 근거(basis_claims) 필수·실재({'근거없음' if not claims else errs[:2]}). 인용 가능한 사용자답변 근거ID: {_uf or '없음(request_human_input으로 먼저 물어라)'} (claim_type=factual_input). 건축물대장 사실은 get_building_register ToolMessage의 근거ID(api). 이 실재 ID로 다시 커밋하거나 status='확인필요'+unresolved_by로.</tool_use_error>", tool_call_id)]})
     if status == "확인필요" and ub == "none":
         ub = "user"   # work_type은 보통 사용자만 아는 사실(빈땅/기존건물)
     wtr = WorkTypeResolution(work_type=wt, status=status if status in ("확정", "확인필요") else "확인필요",
@@ -959,7 +960,7 @@ def request_human_input(question: str, fields: list,
     if isinstance(ans, dict) and ans.get("type") == "reject":
         return Command(update={"terminal_reason": "aborted", "_toolcalls": ["request_human_input"],
                                "messages": [_tm("사용자 중단", tool_call_id)]})
-    upd = {"_toolcalls": ["request_human_input"], "messages": [_tm(f"사용자 입력: {ans}", tool_call_id)]}
+    upd = {"_toolcalls": ["request_human_input"]}
     for k in ("floor_area", "floor_count", "use_type"):   # 알려진 스칼라 상태필드(숫자는 형변환)
         if isinstance(ans, dict) and k in ans and ans[k] not in (None, ""):
             v = ans[k]
@@ -975,6 +976,10 @@ def request_human_input(question: str, fields: list,
              if k not in ("floor_area", "floor_count", "use_type", "type") and v not in (None, "")}
     if facts:
         upd["document_facts"] = facts
+    # 이 답을 record_*에 근거로 인용할 evidence_id를 명시(다른 도구처럼 '근거ID' 노출) — 없으면 LLM이 형식 못 맞춰 거부루프→record_loop(라이브검출). user_fact:<field>=collect_evidence_ids가 document_facts로 만드는 실재 ID.
+    _eids = [f"user_fact:{k}" for k in facts]
+    _hint = (f" 이 답을 work_type·verdict 등 record_*의 근거로 쓸 땐 claim_type=factual_input, evidence_id를 다음에서 정확히 인용하라: {_eids} (quote_or_span=답 텍스트). 추측 ID 금지." if _eids else "")
+    upd["messages"] = [_tm(f"사용자 입력: {ans}.{_hint}", tool_call_id)]
     return Command(update=upd)
 
 
