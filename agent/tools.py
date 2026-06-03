@@ -1021,6 +1021,15 @@ def record_verdict(final_verdict: Annotated[Literal["가능", "가능(조건부)
         why = "인용 근거(basis_seq)가 없다" if not basis_seq else f"미충족 축({[(d.get('dimension'), d.get('status'), d.get('unresolved_by', 'none')) for d in bad]})이 있는데 종합이 '{final_verdict}'다 — 불가·critical·미해소(agent/authority) 축 위엔 '가능'계열 불가, '확인필요' 축 위엔 무조건'가능' 불가"
         return Command(update={"_reject_count": 1, "messages": [_tm(
             f"<tool_use_error>종합판정 거부: {why}. 근거를 달거나, 막힌 축이 있으면 final_verdict를 '확인필요'/'위험·금지'로 다시 커밋하라.</tool_use_error>", tool_call_id)]})
+    # P1(적대검수): '위험·금지'는 '불가' 축 중 하나가 **법령 명시금지 근거(claim_type=legal_applicability)**를 가져야 한다.
+    # 데이터 사실(factual_input — 필지면적·대장값 등)만으론 법적금지 아님 → 데이터 오해소(22㎡ 자투리)를 '위험·금지'로 둔갑 차단(AGENT_SYSTEM 권고를 코드 안전망으로 승격, LLM 미준수 실측 2건).
+    if final_verdict == "위험·금지":
+        _bulga = [d for d in dims if str(d.get("status", "")) == "불가"]
+        _has_legal = lambda d: any(str(c.get("claim_type", "")) == "legal_applicability"
+                                   for c in (d.get("basis_claims") or []) if isinstance(c, dict))
+        if not _bulga or not any(_has_legal(d) for d in _bulga):
+            return Command(update={"_reject_count": 1, "messages": [_tm(
+                "<tool_use_error>종합 '위험·금지' 거부: '불가' 축 중 하나가 **법령 명시금지 근거(claim_type=legal_applicability·evidence_id 실재)**를 가져야 한다. 현재 불가축이 없거나 전부 factual_input(사용자/API 사실)만 — 데이터 사실(필지면적·대장값 등)은 법적 금지가 아니다(미확인≠금지). 명시 금지 법령근거를 단 불가축을 제시하거나, 데이터가 미확정이면(예 필지 오해소 의심) final_verdict='확인필요'(해당 축 status=확인필요·unresolved_by=data_unavailable)로 커밋하라.</tool_use_error>", tool_call_id)]})
     def _mk(d):
         st = str(d.get("status", "주의"))
         if st not in ("충족", "주의", "확인필요", "불가"):

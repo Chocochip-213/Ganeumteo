@@ -80,6 +80,18 @@ def test_verdict_rejects_positive_on_blocked_axis():
     assert upd.get("_reject_count") == 1, "불가 축 위 '가능' 종합이 통과됨"
 
 
+def test_verdict_rejects_danger_without_legal_basis():
+    # P1(적대검수): '위험·금지'는 불가축에 법령 명시금지(legal_applicability) 근거 필수 — 데이터사실(factual_input)만으론 거부(미확인≠금지, 22㎡ 오해소 둔갑 차단). 특정 숫자/주소 분기 아닌 근거종류 불변식.
+    st = {"document_facts": {"규모": "필지22㎡"}, "citations": [],
+          "evidence_records": {"law:GB법|1": {"evidence_id": "law:GB법|1", "source": "law", "raw_text": "개발제한구역에서 건축물의 신축은 금지한다"}}}
+    bad = _u("record_verdict", final_verdict="위험·금지",
+             dimensions=[{"dimension": "규모", "status": "불가", "basis_claims": [{"evidence_id": "user_fact:규모", "claim_type": "factual_input"}]}], state=st)
+    assert bad.get("_reject_count") == 1, "factual_input만 단 불가축으로 '위험·금지' 통과됨(데이터사실→법적금지 둔갑)"
+    good = _u("record_verdict", final_verdict="위험·금지",
+              dimensions=[{"dimension": "개발제한구역", "status": "불가", "basis_claims": [{"evidence_id": "law:GB법|1", "claim_type": "legal_applicability", "quote_or_span": "개발제한구역에서 건축물의 신축은 금지"}]}], state=st)
+    assert good.get("_reject_count") != 1, "법령 명시금지 근거 단 정당한 '위험·금지'가 거부됨"
+
+
 def test_verdict_rejects_unknown_unresolved_by():
     upd = _u("record_verdict", final_verdict="확인필요", dimensions=[{"dimension": "x", "status": "확인필요", "unresolved_by": "엉뚱값"}], state=_ev_state())
     assert upd.get("_reject_count") == 1, "비enum unresolved_by가 조용히 none으로 통과됨"
