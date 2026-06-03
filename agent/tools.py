@@ -314,6 +314,38 @@ def ordin_byeolpyo_fetch(sigungu: str, zone: str, tool_call_id: Annotated[str, I
 
 
 @tool
+def ordin_article_fetch(sigungu: str, ordin_query: str, tool_call_id: Annotated[str, InjectedToolCallId], keyword: str = "", offset: Annotated[int, Field(description="긴 조례 본문 이어읽기 시작 위치(문자). 기본 0. ToolMessage가 'offset=N' 알려주면 그 값으로 재호출.")] = 0) -> Command:
+    """지자체 조례의 **본문 조문**(별표 아님) 텍스트 — ordin_byeolpyo_fetch(별표)의 형제.
+    용도: 조례가 건폐율·용적률·높이·일조·주차 등을 법정상한보다 강화한 수치가 별표가 아닌 **본문 조문**에 있을 때, 그 조문을 읽어 실제 강화치를 확정(법정상한만 알고 '확인필요' 후퇴 방지).
+    입력: sigungu=지자체명, ordin_query=찾는 조례 종류(예 '도시계획 조례'·'건축 조례'·'주차장 설치 및 관리 조례'). keyword=본문서 좁힐 말(예 '건폐율'·'용적률'·'높이') — 주면 그 말 든 조만, 비우면 전체(긴 본문은 offset로 이어읽기)."""
+    q = ordin_query if (not sigungu or sigungu in ordin_query) else f"{sigungu} {ordin_query}"
+    raw = L.ordin_search(q).get("items") or []
+    cands = [it for it in raw if (not sigungu or sigungu in _S(it.get("자치법규명")) or _nows(sigungu) in _nows(it.get("지자체기관명")))] or raw
+    cands.sort(key=lambda it: 0 if _nows(it.get("지자체기관명")) == _nows(sigungu) else 1)   # 정확 지자체 우선
+    if not cands:
+        return Command(update={"_toolcalls": ["ordin_article_fetch"],
+                               "messages": [_tm(f"'{sigungu}' '{ordin_query}' 조례 검색 0건 — 조례명을 바꿔(예 '도시계획 조례'/'건축 조례') 다시 시도하거나, 별표면 ordin_byeolpyo_fetch 사용.", tool_call_id)]})
+    it = cands[0]
+    nm = _S(it.get("자치법규명")); mst = it.get("자치법규일련번호") or it.get("MST")
+    arts = L.ordin_articles(mst)                          # (조제목, 조내용) 전수
+    note = ""
+    if keyword:
+        kw = _nows(keyword)
+        hit = [(t, c) for (t, c) in arts if kw in _nows(t) or kw in _nows(c)]   # 기계적 부분문자열 좁힘(Ctrl+F — 의미판정 아님)
+        if hit: arts = hit
+        else: note = f"(keyword '{keyword}' 든 조 없음 — 전체 반환) "
+    body = "\n".join(f"[{t}] {c}" for (t, c) in arts).strip()
+    if not body:
+        return Command(update={"_toolcalls": ["ordin_article_fetch"],
+                               "messages": [_tm(f"'{nm}' 본문 조문 비어있음 — 별표일 수 있으니 ordin_byeolpyo_fetch 시도.", tool_call_id)]})
+    art_label = f"{nm} 본문" + (f"·'{keyword}'" if keyword else "")
+    cite = _mark_trunc(Citation(source="ordin", law_name=nm, article=art_label, quote=body[:110], extract_method="조문").model_dump(), len(body), 9000, offset)
+    _cev = {cite["source_id"]: _ev_record(cite["source_id"], "ordin", body[offset:offset + 9000], truncated=cite.get("truncated"), read_coverage=cite.get("read_coverage"))}
+    return Command(update={"citations": [cite], "evidence_records": _cev, "_delegated": True, "_toolcalls": ["ordin_article_fetch"],
+                           "messages": [_tm(f"[조례 본문 조문:{nm}] {note}(근거ID:{cite['source_id']})\n{body[offset:offset+9000]}" + ("" if (offset + 9000) >= len(body) else f"\n\n…[{len(body)}자 중 {offset}~{offset+9000}자 표시. 이후 {len(body)-(offset+9000)}자 더 — offset={offset+9000}로 이어읽거나 keyword로 좁혀라. 끝까지 안 읽고 단정하면 강등]"), tool_call_id)]})
+
+
+@tool
 def law_byeolpyo_fetch(law_name: str, byeolpyo_kw: str, tool_call_id: Annotated[str, InjectedToolCallId], offset: Annotated[int, Field(description="긴 별표 본문 이어읽기 시작 위치(문자). 기본 0. ToolMessage가 'offset=N' 알려주면 그 값으로 재호출해 다음 부분 읽기.")] = 0) -> Command:
     """국가법령(본법/시행령/시행규칙)의 별표 inline 텍스트(원문 전체). 어느 법이든.
     입력: law_name=법령명(안 맞으면 후보 목록 반환→재시도). byeolpyo_kw=별표 번호('1') 또는 제목 키워드('용도별').
@@ -1058,7 +1090,7 @@ def get_building_floors(pnu: str, tool_call_id: Annotated[str, InjectedToolCallI
 
 
 TOOLS = [geocode, get_parcel, get_building_register, get_building_floors, get_land_use, get_land_price, act_landuse,
-         ordin_byeolpyo_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
+         ordin_byeolpyo_fetch, ordin_article_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
          compute_envelope, normalize_area, parking_quota, levy_estimate,
          author_rule_tool, reg_effect_resolve_tool, procedure_framework_tool, record_uijae, record_reg_resolution, record_ordinance_ruling, record_verdict,
          record_use_classification, record_landuse_resolution, record_procedure_steps, record_work_type,
