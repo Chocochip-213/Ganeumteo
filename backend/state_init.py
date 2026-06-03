@@ -32,4 +32,4 @@ def make_config(thread_id=None):
     """서버 생성 thread_id(클라가 안 주면). recursion_limit=80. item 16: 128-bit opaque id(추측 차단).
     클라 제공 id는 형식 검증 — 불일치(주입·path traversal 시도)면 새로 발급(요청 id 무시)."""
     tid = thread_id if (thread_id and _TID_RE.fullmatch(thread_id)) else ("req-" + uuid.uuid4().hex)   # uuid4 hex=128bit
-    return tid, {"recursion_limit": 140, "configurable": {"thread_id": tid}}   # _STEP_HARDCAP=44(agent방문)×~2 graph step + 여유 → 다중규제 케이스 완주(80→140)
+    return tid, {"recursion_limit": 170, "configurable": {"thread_id": tid}}   # _STEP_HARDCAP=56(agent방문)×~2 graph step + 여유 → R1 다중규제 완주(140→170)

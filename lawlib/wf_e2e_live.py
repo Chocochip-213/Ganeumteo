@@ -90,7 +90,7 @@ def act_detail(uc,nm,ac):
         for it in items:
             g=lambda k:(re.findall(rf"<{k}>(.*?)</{k}>",it,re.S) or [""])[0].strip()
             reg=g("REG_NM")
-            if reg: out.append({"reg":reg,"ref_law":g("LU_REF_LAW_NM1"),"node":g("NODE_DESC")})
+            if reg: out.append({"reg":reg,"ref_law":g("LU_REF_LAW_NM1"),"node":g("NODE_DESC"),"def_ref":g("DEF_REF")})   # 검수 MED-2: 세목 정의/단서 보존 → act API 부분문자열 false-positive 거름
         if len(items)<100 or page>=10: break   # 뒤페이지 금지/조건 누락 방지
         page+=1
     return out

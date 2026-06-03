@@ -628,7 +628,7 @@ def levy_estimate(levy_type: str, land_price: Optional[float] = None, area_m2: O
             msg = "농지보전부담금: 산식만(율·공시지가·면적·근거ID 필요)"
     elif "산림" in lt or "대체" in lt:
         li = LevyItem(levy_type="대체산림자원조성비", formula="면적 × 산림청 고시단가(보전산지/준보전산지 등급별 할증 적용)",
-                      status="확인필요", note="단가=산림청 매년 고시(법령·API 밖) → 금액 미산출",
+                      status="확인필요", note="단가=산림청 고시(고시 본문은 admrul 조회 가능하나 보전산지 등급·고시표 파싱 필요 → 금액 자동확정 미완)",
                       citation=Citation(source="law", law_name="산지관리법", article="§19",
                                         quote="대체산림자원조성비 산식 — ㎡당 단가는 산림청 고시 확인필요")).model_dump()
         msg = "대체산림자원조성비: 산식만 — 단가 데이터원 없음(확인필요)"
