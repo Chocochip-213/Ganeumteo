@@ -468,6 +468,8 @@ input, textarea { font-family: inherit; }
 .vax .vax-b { min-width: 0; }
 .vax .vax-d { font-size: 14.5px; font-weight: 700; letter-spacing: -0.01em; color: var(--fg-1); }
 .vax .vax-r { font-size: 13px; color: var(--fg-2); line-height: 1.5; margin-top: 2px; }
+.vax-allok { padding: 10px 20px 4px; font-size: 13.5px; color: var(--fg-2); display: flex; align-items: center; gap: 7px; }
+.vax-allok::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--go, #16a34a); flex-shrink: 0; }
 
 /* 다음 할 일 */
 .next-list { margin: 0; padding: 6px 20px 16px 42px; display: flex; flex-direction: column; gap: 7px; }

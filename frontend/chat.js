@@ -919,10 +919,18 @@ function verdictAxes(card) {
   const labels = Array.isArray(card.verdict_labels) ? card.verdict_labels : [];
   if (!labels.length) return "";
   const tone = (s) => (s === "충족" ? "ok" : s === "불가" ? "no" : "mid");
-  const rows = labels.map((l) =>
-    `<div class="vax ${tone(l.status)}"><span class="vax-s">${esc(l.status || "")}</span><div class="vax-b"><div class="vax-d">${esc(l.dimension || "")}</div><div class="vax-r">${esc(l.reason || "")}</div></div></div>`
-  ).join("");
-  return `<div class="card-h">${I.list} 판정 축별 결과</div><div class="verdict-axes">${rows}</div>`;
+  const row = (l) =>
+    `<div class="vax ${tone(l.status)}"><span class="vax-s">${esc(l.status || "")}</span><div class="vax-b"><div class="vax-d">${esc(l.dimension || "")}</div><div class="vax-r">${esc(l.reason || "")}</div></div></div>`;
+  // 기본은 '신경 쓸 축'(확인필요·불가·주의)만, 이상 없는(충족) 축은 접어 둠 — 필요한 것만 기본노출
+  const issues = labels.filter((l) => l.status !== "충족");
+  const passed = labels.filter((l) => l.status === "충족");
+  const issuesHtml = issues.map(row).join("");
+  const passedFold = passed.length
+    ? `<details class="disclose"><summary>이상 없는 항목 ${passed.length}개 보기 <span class="chev">${I.chev}</span></summary><div class="dbody"><div class="verdict-axes">${passed.map(row).join("")}</div></div></details>`
+    : "";
+  return `<div class="card-h">${I.list} 판정 축별 결과</div>`
+    + (issuesHtml ? `<div class="verdict-axes">${issuesHtml}</div>` : `<div class="vax-allok">모든 판정 축 이상 없음 ${passed.length ? `(${passed.length}개)` : ""}</div>`)
+    + passedFold;
 }
 
 // ── verdict-card (level: classifyVerdict.tone → go/cond/check) ──
@@ -1018,7 +1026,7 @@ function verdictCard(env, card, cits, full) {
     ${kv.length ? `<div class="kv-grid">${kv.map(([k, val]) => `<div class="kv-cell"><div class="k">${esc(k)}</div><div class="v">${val}</div></div>`).join("")}</div>` : ""}
     ${verdictAxes(card)}
     ${isAbstainShape ? abstainBlock(card) : ""}
-    ${checkRows ? `<div class="card-h">${I.list} 검토한 항목</div><div class="check-list">${checkRows}</div>` : ""}
+    ${checkRows ? `<details class="disclose"><summary>검토한 항목 ${viewSteps.length}개 보기 <span class="chev">${I.chev}</span></summary><div class="dbody"><div class="check-list">${checkRows}</div></div></details>` : ""}
     ${riskHtml ? `<div class="card-h">${I.bang} 미리 알아둘 점</div><div class="risk-list">${riskHtml}</div>` : ""}
     ${nextHtml ? `<div class="card-h">${I.route} 다음에 해야 할 일</div><ol class="next-list">${nextHtml}</ol>` : ""}
     <details class="disclose"><summary>판단 근거 ${discloseN}개 보기 <span class="chev">${I.chev}</span></summary>
