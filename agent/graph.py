@@ -9,6 +9,8 @@ from langchain_core.messages import HumanMessage, ToolMessage
 from state import GaneomteoState
 from tools import TOOLS
 from agent import make_agent_node
+import wf_procedure_agent as _PROCFR   # PROC_FRAME is_doc_stage floor(검수 H-1)
+_DOC_FRAME_STAGES = frozenset(f["stage_key"] for f in _PROCFR.PROC_FRAME if f.get("is_doc_stage"))
 
 
 def _wrap_tool_call(request, execute):
@@ -107,12 +109,14 @@ def completeness_guard(state):
                 miss.append("절차판정(record_procedure_steps 호출 — 프레임 각 단계 applies 판정)")
         # 서류 = 적용 절차(requires_documents=true) + 의제 stage만 요구(신축 가정 제거). list_status=전수확보만 커버(실패=미커버).
         proc = [p for p in state.get("procedure_steps", []) if isinstance(p, dict) and p.get("applies") != "no"]
-        doc_stages = {d.get("stage_key") for d in state.get("documents", []) if d.get("list_status", d.get("status")) == "전수확보"}
+        doc_stages = {str(d.get("stage_key") or "").strip() for d in state.get("documents", []) if d.get("list_status", d.get("status")) == "전수확보"}
         doc_need = set()
         for p in proc:
-            if p.get("requires_documents"):
-                doc_need.update(k for k in (p.get("related_document_stage_keys") or [p.get("stage_key")]) if k)
-        doc_need.update(u.get("stage_key") for u in state.get("uijae", []) if u.get("stage_key"))
+            _sk = str(p.get("stage_key") or "").strip()
+            # 검수 H-1: applies=yes 서류단계(프레임 is_doc_stage)는 requires_documents 누락해도 전수 요구 — LLM이 서류단계 누락해 거짓완료하는 fail-OPEN 차단. stub(전부 applies=unknown)엔 미발동→데드락 없음(불변식5 보존). applies 판정은 여전히 LLM.
+            if p.get("requires_documents") or (_sk in _DOC_FRAME_STAGES and p.get("applies") == "yes"):
+                doc_need.update(str(k).strip() for k in (p.get("related_document_stage_keys") or [p.get("stage_key")]) if k)
+        doc_need.update(str(u.get("stage_key")).strip() for u in state.get("uijae", []) if u.get("stage_key"))
         if not doc_need.issubset(doc_stages):
             miss.append("서류전수:" + ",".join(sorted(doc_need - doc_stages)))
         # 조건부('해당시만') 서류 미판정 검사(최상위 호만, 목 제외)

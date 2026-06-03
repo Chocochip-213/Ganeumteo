@@ -149,7 +149,7 @@ def docs_for(stage, law_name=None, article=None, hang_override=None):
                                     "단서있음": '다만' in mtxt, "조건부": ho_cond or _is_cond(mtxt),
                                     "서식": _ref_form(mtxt, forms),
                                     "유형": "cross_ref" if _is_xref(mtxt) else mok_type})
-            _st = "확인필요" if (hang and not _hang_ok) else "전수확보"   # item 5: 명시 항 불일치 fallback은 확정(전수확보) 금지
+            _st = "확인필요" if (hang and not _hang_ok) or len(서류) == 0 else "전수확보"   # item 5 + 검수 H-2: 호 0건(빈 목록)이면 전수확보 금지(빈 목록 침묵 통과 차단)
             return {"단계": stage, "법령": lawnm, "조": f"제{jo_num}조" + (f"의{jo_ga}" if jo_ga else "") + (hang or ''),
                     "상태": _st, "사유": (f"명시 항 '{hang}' 불일치 — fallback 수집(확정 아님)" if _st == "확인필요" else ""),
                     "건수": len(서류), "신청서": 신청서, "서류": 서류, **_when(stage)}
