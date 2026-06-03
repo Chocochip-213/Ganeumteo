@@ -49,12 +49,14 @@ def dig(j,k): return re.findall(rf'"{k}"\s*:\s*"([^"]*)"',json.dumps(j,ensure_as
 # 인허가 입지 risk 공간레이어 seed (API_PROBE_RESULTS.md §1.4 실측 코드 → 규제명). REG_SEED와 동형 라우팅 인덱스 —
 # 코드는 '어느 레이어를 POINT로 탐지하나'만, 효과·가부 판정 0(reg_overlaps 합류 → reg_effect_resolve→record_reg_resolution→게이트가 LLM 판정).
 # getLandUseAttr(지역지구)에 안 잡히던 공간겹침 보호구역·도시계획시설저촉 탐지(없으면 silent miss=거짓'가능'). 교육환경/홍수/보전산지정밀은 레이어 부재(§8 honest-limit)라 제외.
+# 백두대간(LT_C_WKMBBSN)은 req/data가 geomFilter 무시→전 지점 feats=1 false-positive(역삼·부산·양평·태백 라이브검증 모두 1)라 제외 — 배선시 모든 진단에 백두대간 거짓플래그. WFS 전용 추정(후속 GetCapabilities probe 대상).
 RISK_LAYERS = [
  ("LT_C_UM710", "상수원보호구역"), ("LT_C_AGRIXUE101", "농업진흥지역"),
  ("LT_C_UPISUQ151", "도시계획시설(도로)저촉"), ("LT_C_UPISUQ153", "도시계획시설(공원·녹지)저촉"),
  ("LT_C_UPISUQ171", "개발행위허가제한지역"), ("LT_C_UM000", "가축사육제한구역"),
  ("LT_C_UO301", "국가유산보호구역"), ("LT_C_UP201", "재해위험지구"),
  ("LT_C_UM221", "야생생물보호구역"), ("LT_C_UM901", "습지보호지역"),
+ ("LT_C_UPISUQ161", "지구단위계획구역"),   # probe+라이브검증 OK(역삼·부산 positive / 양평·태백 NOT_FOUND — geomFilter 정상). 세부지침 본문은 포털전용 honest-limit이라 '구역 해당'만 탐지 → LLM이 확인필요+actionable경로 판정.
 ]
 def risk_overlaps(x, y):
     """인허가 입지 risk 공간레이어를 POINT(x y) geomFilter로 탐지 → 겹치는 규제명 리스트. 탐지만(verdict 0).
