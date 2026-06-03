@@ -104,6 +104,19 @@ def test_verdict_rejects_fake_basis_claim():
     assert upd.get("_reject_count") == 1, "종합판정에 허위 evidence_id가 통과됨"
 
 
+def test_dedup_docs_merges_stage_rows():
+    # P3(적대검수): 같은 stage_key 빈 placeholder + 전수확보 행 → 전수확보 행 하나로 병합(출력 위생)
+    sys.path.insert(0, os.path.join(_ROOT, "agent"))
+    import graph
+    docs = [{"stage_key": "해체", "list_status": "확인필요", "items": [], "count": 0},
+            {"stage_key": "해체", "list_status": "전수확보", "items": [{"ho": "1"}, {"ho": "2"}], "count": 2},
+            {"stage_key": "건축허가", "list_status": "전수확보", "items": [{"ho": "1"}], "count": 1}]
+    out = graph._dedup_docs(docs)
+    bykey = {d["stage_key"]: d for d in out}
+    assert len(out) == 2, f"stage_key 중복 미병합:{[d.get('stage_key') for d in out]}"
+    assert bykey["해체"].get("list_status") == "전수확보" and len(bykey["해체"]["items"]) == 2, "빈 placeholder가 전수확보 행을 이김"
+
+
 def test_stub_card_has_procedure_and_no_bare_uncertain():
     # stub 카드 구조: procedure_steps 존재 + verdict_labels의 확인필요 축은 unresolved_by 분류(bare 금지)
     sys.path.insert(0, os.path.join(_ROOT, "backend"))

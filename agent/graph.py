@@ -346,6 +346,21 @@ def _merge_scale_card(state):
     return out
 
 
+def _dedup_docs(docs):
+    """P3(적대검수): 같은 stage_key 다중 documents 행 병합 — 전수확보·items많은·count큰 행 채택, 빈 placeholder/superseded 행 제거.
+    출력(카드) 위생만(state.documents 불변 → 완결성가드 영향 0). reg_effects 중복제거(F1)와 동형. 의미판정 0=무하드코딩."""
+    def _score(x):
+        return ((x.get("list_status", x.get("status")) == "전수확보"), len(x.get("items") or []), x.get("count", 0) or 0)
+    best = {}
+    for d in docs:
+        if not isinstance(d, dict):
+            continue
+        k = str(d.get("stage_key") or "")
+        if k not in best or _score(d) > _score(best[k]):
+            best[k] = d
+    return list(best.values())
+
+
 def compose(state):
     """진단 카드 조립(부록 D1.2). 사실 재생성 없이 State 값만. (실 LLM이면 서술 강화)."""
     _ca = {(a.get("stage_key"), _norm_ho(a.get("ho"))): a for a in state.get("cond_assessments", [])}
@@ -375,7 +390,7 @@ def compose(state):
                        "author_note": d.get("author_note", ""),
                        "apply_title": d.get("apply_title", ""), "apply_hwp": d.get("apply_hwp", ""),
                        "apply_pdf": d.get("apply_pdf", ""), "items": _doc_items(d)}
-                      for d in state.get("documents", [])],
+                      for d in _dedup_docs(state.get("documents", []))],
         "scale_limits": _merge_scale_card(state),   # compute_scale + envelope(분리키) 표시 병합
         "parking_req": state.get("parking_req"),       # 부설주차 N대(parking_quota)
         "levies": state.get("levies", []),             # 부담금(농지보전·대체산림·개발) — 금액 없으면 status=확인필요
