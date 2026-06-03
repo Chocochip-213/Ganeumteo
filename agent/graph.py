@@ -137,6 +137,10 @@ def completeness_guard(state):
             _miss_reg = [r for r in state["reg_overlaps"] if r and not (_lr.get(r) or {}).get("resolution_committed")]
             if _miss_reg:
                 miss.append("규제해소(record_reg_resolution로 각 규제 판정):" + ",".join(str(r) for r in _miss_reg[:5]))
+        # A M-2: 건축가부 별표를 fetch했으면 판정 커밋 강제 — record_ordinance_ruling 누락 시 조례축 silent 차단(stub 면제). 가능/불가/확인필요 내용은 LLM(코드는 커밋 presence만).
+        # 별표 fetch 실패경로는 확인필요 JoryeVerdict 자동적재(tools.py:303) → jorye_verdicts 비면 성공fetch인데 미커밋 = 그 갭만 잡음. envelope용 ordin_article_fetch 인용은 별표 판정과 무관해 제외(별표 도구 호출 기준).
+        if not _is_stub and "ordin_byeolpyo_fetch" in called and not state.get("jorye_verdicts"):
+            miss.append("조례판정(record_ordinance_ruling — 읽은 조례 별표로 가부 커밋, 미해소면 확인필요+unresolved_by)")
         # §0 2b: agent-미해결 루프백 — reg_effects/verdict_labels에 unresolved_by=agent 남으면 더 조사 강제(stub 면제). 최종 카드 잔존은 user/authority/data_unavailable/tool_budget_exhausted만.
         if not _is_stub:
             _vl = state.get("_verdict_round") if state.get("_verdict_round") is not None else state.get("verdict_labels", [])
