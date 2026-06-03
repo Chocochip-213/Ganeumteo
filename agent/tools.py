@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """ReAct 도구 — 검증된 research/wf_*.py를 @tool로 래핑. 부록 G2.1: Command(update) 반환.
 사실=tool fetch(원문), 인용 동반, 못 얻으면 확인필요. 내부 로직 전부 실증(wf_*.py)."""
-import sys, re, io, zlib, json, urllib.request, urllib.parse, time, uuid, datetime
+import os, sys, re, io, zlib, json, urllib.request, urllib.parse, time, uuid, datetime
 from typing import Annotated, Optional, List, Literal
 from pydantic import Field
 from langchain_core.tools import tool, InjectedToolCallId
@@ -111,20 +111,26 @@ def get_parcel(x: float, y: float, tool_call_id: Annotated[str, InjectedToolCall
     _pmsg = f"지목 {jimok}, 도로접면 {road}, 시군구 {sigungu}, PNU {pnu}"
     cite = Citation(source="vworld", title="지적(필지) 정보 — 국토교통부 연속지적도",
                     quote=f"지목 {jimok}" + (f", 도로접면 {road}" if road else ""), source_id=_peid).model_dump()
-    return Command(update={"pnu": pnu, "area_cd": pnu[:5], "jimok": jimok, "sigungu": sigungu,
+    return Command(update={"pnu": pnu, "area_cd": pnu[:5], "jimok": jimok, "sigungu": sigungu, "_xy": [float(x), float(y)],
                            "road_side": road, "citations": [cite], "evidence_records": {_peid: _ev_record(_peid, "api", _pmsg)},
                            "_toolcalls": ["get_parcel"],
                            "messages": [_tm(f"PNU={pnu} 행정코드={pnu[:5]} 지목={jimok} 도로접면={road} 시군구={sigungu} ({addr}) (근거ID:{_peid})", tool_call_id)]})
 
 
 @tool
-def get_land_use(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+def get_land_use(pnu: str, state: Annotated[dict, InjectedState] = None, tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
     """PNU→용도지역·규제중첩·UQ코드. VWorld ned getLandCharacteristics/getLandUseAttr."""
     lc = W.ned("getLandCharacteristics", pnu)
     zone = (W.dig(lc, "prposArea1Nm") or [None])[0]
     lu = W.ned("getLandUseAttr", pnu)
     uq = re.findall(r'"prposAreaDstrcCode"\s*:\s*"(UQ[A-Z][0-9]+)"', json.dumps(lu, ensure_ascii=False))
     regs = list(dict.fromkeys(W.dig(lu, "prposAreaDstrcCodeNm")))
+    _xy = (state or {}).get("_xy")
+    if _xy and len(_xy) == 2 and not (os.environ.get("FORCE_STUB") or os.environ.get("APP_MODE") == "stub"):   # 검수 R1: 공간겹침 risk 레이어 POINT 탐지 → reg_overlaps 합류(getLandUseAttr 미포착 보호구역·도시계획시설저촉 silent miss=거짓'가능' 차단; 효과·가부는 LLM 게이트). stub은 결정적 게이트라 live risk 탐지 skip.
+        try:
+            regs = list(dict.fromkeys(regs + W.risk_overlaps(_xy[0], _xy[1])))
+        except Exception:
+            pass
     road = (W.dig(lc, "roadSideCodeNm") or [None])[0]   # #10 도로접면(맹지)은 토지특성에 있음
     raw_area = (W.dig(lc, "lndpclAr") or [None])[0]      # 대지면적 — envelope·부담금 입력. 0=미상/실제0 구분불가 → None
     try:

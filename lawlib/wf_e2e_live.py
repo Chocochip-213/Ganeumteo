@@ -45,6 +45,31 @@ def ned(ep,pnu,ex=None):
     try: return json.loads(get(f"http://api.vworld.kr/ned/data/{ep}",p))
     except: return {}
 def dig(j,k): return re.findall(rf'"{k}"\s*:\s*"([^"]*)"',json.dumps(j,ensure_ascii=False))
+
+# 인허가 입지 risk 공간레이어 seed (API_PROBE_RESULTS.md §1.4 실측 코드 → 규제명). REG_SEED와 동형 라우팅 인덱스 —
+# 코드는 '어느 레이어를 POINT로 탐지하나'만, 효과·가부 판정 0(reg_overlaps 합류 → reg_effect_resolve→record_reg_resolution→게이트가 LLM 판정).
+# getLandUseAttr(지역지구)에 안 잡히던 공간겹침 보호구역·도시계획시설저촉 탐지(없으면 silent miss=거짓'가능'). 교육환경/홍수/보전산지정밀은 레이어 부재(§8 honest-limit)라 제외.
+RISK_LAYERS = [
+ ("LT_C_UM710", "상수원보호구역"), ("LT_C_AGRIXUE101", "농업진흥지역"),
+ ("LT_C_UPISUQ151", "도시계획시설(도로)저촉"), ("LT_C_UPISUQ153", "도시계획시설(공원·녹지)저촉"),
+ ("LT_C_UPISUQ171", "개발행위허가제한지역"), ("LT_C_UM000", "가축사육제한구역"),
+ ("LT_C_UO301", "국가유산보호구역"), ("LT_C_UP201", "재해위험지구"),
+ ("LT_C_UM221", "야생생물보호구역"), ("LT_C_UM901", "습지보호지역"),
+]
+def risk_overlaps(x, y):
+    """인허가 입지 risk 공간레이어를 POINT(x y) geomFilter로 탐지 → 겹치는 규제명 리스트. 탐지만(verdict 0).
+    빈응답/ERROR/실패=미겹침(graceful degrade). 모든 레이어를 RISK_LAYERS 루프로만 순회(per-code 분기 0=무하드코딩)."""
+    out = []
+    for code, name in RISK_LAYERS:
+        r = get("https://api.vworld.kr/req/data", {"service": "data", "request": "GetFeature", "version": "2.0",
+                "data": code, "format": "json", "crs": "EPSG:4326", "size": 1, "geometry": "false",
+                "geomFilter": f"POINT({x} {y})", "key": VW, "domain": DOM})
+        try:
+            feats = json.loads(r).get("response", {}).get("result", {}).get("featureCollection", {}).get("features") or []
+            if feats: out.append(name)
+        except Exception:
+            continue
+    return out
 def act(uc,nm,ac):
     out=[]; page=1
     while True:   # 전수 순회 — 5건 고정 절단 제거(뒤페이지 '금지' 누락 시 거짓 가능 방지)
