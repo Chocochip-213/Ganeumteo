@@ -82,6 +82,16 @@ def act(uc,nm,ac):
         page+=1
     return out
 
+def _parse_act_items(raw):
+    """DTarLandUseInfo XML(euc-kr) → item별 {reg,ref_law,node,def_ref}. act_detail서 분리(오프라인 회귀테스트 가능). REG_NM 빈 item 제외.
+    검수 MED-2: 세목 정의/단서(DEF_REF) 보존 → act API 부분문자열 false-positive 거름."""
+    out=[]
+    for it in re.findall(r"<item>(.*?)</item>",raw,re.S):
+        g=lambda k:(re.findall(rf"<{k}>(.*?)</{k}>",it,re.S) or [""])[0].strip()
+        reg=g("REG_NM")
+        if reg: out.append({"reg":reg,"ref_law":g("LU_REF_LAW_NM1"),"node":g("NODE_DESC"),"def_ref":g("DEF_REF")})
+    return out
+
 def act_detail(uc,nm,ac):
     """행위제한 응답을 item별로 파싱 — REG_NM(가부신호)+LU_REF_LAW_NM1(근거조항)+NODE_DESC(시설명) 동반 반환.
     act()가 버리던 근거조항을 보존해 LLM이 인용·판정 근거로 쓰게 함(grounding 복구). 전수 pagination(5건 절단 제거)."""
@@ -89,10 +99,7 @@ def act_detail(uc,nm,ac):
     while True:
         r=get("http://apis.data.go.kr/1613000/arLandUseInfoService/DTarLandUseInfo",{"serviceKey":DK,"areaCd":ac,"ucodeList":uc,"landUseNm":nm,"numOfRows":100,"pageNo":page},euckr=True)
         items=re.findall(r"<item>(.*?)</item>",r,re.S)
-        for it in items:
-            g=lambda k:(re.findall(rf"<{k}>(.*?)</{k}>",it,re.S) or [""])[0].strip()
-            reg=g("REG_NM")
-            if reg: out.append({"reg":reg,"ref_law":g("LU_REF_LAW_NM1"),"node":g("NODE_DESC"),"def_ref":g("DEF_REF")})   # 검수 MED-2: 세목 정의/단서 보존 → act API 부분문자열 false-positive 거름
+        out.extend(_parse_act_items(r))
         if len(items)<100 or page>=10: break   # 뒤페이지 금지/조건 누락 방지
         page+=1
     return out
