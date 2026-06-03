@@ -28,6 +28,21 @@ def test_status_label_keys_match():
     missing = set(_STATUS) - fe
     assert not missing, f"backend _STATUS 키가 frontend STATUS_KO에 없음(종료사유 라벨 뭉개짐): {sorted(missing)}"
 
+# 불변식 D3 — _delegated는 OR 리듀서 필드여야 한다(병렬 도구가 한 superstep에 동시 set → InvalidUpdateError 차단).
+# plain 필드로 되돌리면 act_landuse·ordin_*가 한 턴에 병렬 호출될 때 그래프 전체가 중단된다(검수: 라이브 crash 실발생).
+def test_delegated_concurrent_merge():
+    reducer_fields = {n for n, h in S.GaneomteoState.__annotations__.items() if hasattr(h, "__metadata__")}
+    assert "_delegated" in reducer_fields, "_delegated가 리듀서(Annotated) 아님 — 병렬 도구 동시 set 시 InvalidUpdateError"
+    assert S._keep_true(True, True) is True and S._keep_true(None, True) is True, "OR 리듀서가 동시 True를 병합 안 함"
+    assert S._keep_true(False, True) is True and S._keep_true(False, False) is False, "_keep_true OR 의미 위반"
+
+# 불변식 D4 — HITL 답변(document_facts 키)은 user_fact:<key>로 인용 가능해야 한다(record_* 근거계약).
+# 안 되면 work_type 등 user_fact 근거 커밋이 거부루프→record_loop(빈 진단)으로 떨어진다(검수: 라이브 crash 실발생).
+def test_human_fact_citable():
+    ids = S.collect_evidence_ids({"document_facts": {"answer": "철거 후 신축"}})
+    assert "user_fact:answer" in ids, "HITL 답변이 인용 가능한 evidence_id(user_fact:<key>)로 노출 안 됨"
+    assert S._claim_kind_ok("factual_input", "user_fact:answer"), "user_fact는 factual_input 근거로 허용돼야(거부루프 방지)"
+
 def main():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     fail = 0
