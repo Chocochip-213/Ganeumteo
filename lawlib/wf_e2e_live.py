@@ -116,10 +116,15 @@ def building_register(pnu):
     if tc==0 or not its:
         return {"건물있음":False,"사유":"등록 건축물 없음(빈땅 가능)"}
     it=its[0]
+    def _v(k):   # 표제부 성능필드 raw(공백→None) — 증축/대수선/규모 의제 판단근거(내진보강·에너지계획서·승강기검사). 값 해석은 LLM, 코드는 표면화만.
+        v=str(it.get(k) or "").strip(); return v or None
     return {"건물있음":True,"동수":tc,"주용도":it.get("mainPurpsCdNm"),"연면적":it.get("totArea"),
             "지상층수":it.get("grndFlrCnt"),"건물명":it.get("bldNm"),"건폐율":it.get("bcRat"),"용적률":it.get("vlRat"),
             "지하층수":it.get("ugrndFlrCnt"),"높이":it.get("heit"),"구조":it.get("strctCdNm"),
-            "사용승인일":it.get("useAprDay"),"기타용도":it.get("etcPurps")}
+            "사용승인일":it.get("useAprDay"),"기타용도":it.get("etcPurps"),
+            "내진설계적용":_v("rserthqkDsgnApplyYn"),"내진능력":_v("rserthqkAblty"),
+            "에너지효율등급":_v("engrGrade"),"에너지성능지표(EPI)":_v("engrEpi"),"녹색건축등급":_v("gnBldGrade"),
+            "승용승강기수":_v("rideUseElvtCnt"),"옥내기계식주차대수":_v("indrMechUtcnt")}
 
 def building_floors(pnu):
     """건축물대장 층별개요(건축HUB getBrFlrOulnInfo) — 층별 '현재 용도'(용도변경 출발점). PNU 분해는 building_register와 동일.
