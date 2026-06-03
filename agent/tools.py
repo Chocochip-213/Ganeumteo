@@ -125,6 +125,7 @@ def get_land_use(pnu: str, state: Annotated[dict, InjectedState] = None, tool_ca
     lu = W.ned("getLandUseAttr", pnu)
     uq = re.findall(r'"prposAreaDstrcCode"\s*:\s*"(UQ[A-Z][0-9]+)"', json.dumps(lu, ensure_ascii=False))
     regs = list(dict.fromkeys(W.dig(lu, "prposAreaDstrcCodeNm")))
+    cnfl = list(dict.fromkeys(W.dig(lu, "cnflcAtNm")))   # 검수 MED-1: 포함/저촉 신호 surface — '저촉'(일부만 걸침)이면 불필요 조례확인 전가↓(LLM 판단 보조)
     _xy = (state or {}).get("_xy")
     if _xy and len(_xy) == 2 and not (os.environ.get("FORCE_STUB") or os.environ.get("APP_MODE") == "stub"):   # 검수 R1: 공간겹침 risk 레이어 POINT 탐지 → reg_overlaps 합류(getLandUseAttr 미포착 보호구역·도시계획시설저촉 silent miss=거짓'가능' 차단; 효과·가부는 LLM 게이트). stub은 결정적 게이트라 live risk 탐지 skip.
         try:
@@ -141,7 +142,7 @@ def get_land_use(pnu: str, state: Annotated[dict, InjectedState] = None, tool_ca
     upd = {"zone": zone, "zone_ucodes": uq, "reg_overlaps": regs,
            "evidence_records": {_leid: _ev_record(_leid, "api", f"용도지역 {zone}, 대지면적 {land_area}㎡, 도로접면 {road}, 규제중첩 {regs}")},
            "_toolcalls": ["get_land_use"],
-           "messages": [_tm(f"용도지역={zone} 대지면적={land_area}㎡ 도로접면={road} UQ(전부 콤마로 이어 act_landuse에 그대로)={','.join(uq)} 규제={regs} (근거ID:{_leid})", tool_call_id)]}
+           "messages": [_tm(f"용도지역={zone} 대지면적={land_area}㎡ 도로접면={road} UQ(전부 콤마로 이어 act_landuse에 그대로)={','.join(uq)} 규제={regs} 중첩신호(포함/저촉)={cnfl} (근거ID:{_leid})", tool_call_id)]}
     if road is not None:   # 도로접면 None이면 get_parcel이 잡은 값(맹지 등)을 덮어쓰지 않음 — 맹지 fail-closed 보존(last-write-wins 버그 차단)
         upd["road_side"] = road
     if land_area is not None:
