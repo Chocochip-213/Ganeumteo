@@ -1242,6 +1242,7 @@ function docCards(card) {
   return `<div class="card card-pad docs-unified">${stages}</div>`;   // 단계 카드 분리감 제거 — 한 패널에 단계별 구획(구분선)으로 통합
 }
 
+let _offUid = 0;   // 비해당 접기 토글 고유 id(스테이지마다)
 function docStageCard(d, num, isUijae) {
   const stage = d.stage || d.stage_key || "단계";
   const ok = (d.list_status || d.status) === "전수확보";   // item 5: 목록확보 = list_status(해당여부는 items[].applies_status와 분리)
@@ -1250,6 +1251,7 @@ function docStageCard(d, num, isUijae) {
   const R = renderDocItems(_stageItems(d), law, article);
   const orderedHtml = R.html;
   const submit = R.submit, check = R.check, off = R.off, xref = R.xref;
+  const oid = "off-" + (++_offUid);   // 이 스테이지 비해당 접기 토글 id
 
   // item 17: 의제 하위삽입·§11⑤ 하드코딩 제거 — 의제도 동등 카드(아래 chip). 제출처 포털도 코드가 stage 키워드로 확정 안 함(backend 값 없으면 중립 안내).
   const lawLink = law ? `<a class="ds-link" href="${esc(lawURL(law))}" target="_blank" rel="noreferrer">${I.ext} 시행규칙 원문</a>` : "";
@@ -1287,7 +1289,7 @@ function docStageCard(d, num, isUijae) {
     </div>
     ${whenHtml}
     ${authorHtml}
-    ${ok && orderedHtml ? `<div class="ds-items">${orderedHtml}</div>` : ""}
+    ${ok && orderedHtml ? `${off.length ? `<input type="checkbox" class="ds-offtoggle" id="${oid}">` : ""}<div class="ds-items${off.length ? " has-off" : ""}">${orderedHtml}</div>${off.length ? `<label class="ds-offlabel" for="${oid}">비해당 ${off.length}건 (제출 불요) 보기</label>` : ""}` : ""}
     ${!ok ? `<div class="ds-na-note">${I.bang}<span>이 단계 서류는 자동 조회가 되지 않았어요. 관할 기관(해당 시·군·구청 건축과 등)에서 직접 확인하세요. <b>서류가 없다는 뜻은 아니에요.</b></span></div>` : ""}
     <div class="ds-links">${lawLink}${submitLink}</div>
   </div>`;

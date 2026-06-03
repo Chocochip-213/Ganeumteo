@@ -171,6 +171,15 @@
   .ds-ap-u { background: var(--warm-bg); color: var(--warm-fg); }
   .ds-areason { font-size: 12px; color: var(--fg-3); line-height: 1.45; margin-top: 3px; }
   .ds-doc-off { opacity: 0.62; }
+  /* 비해당(제출 불요) 접기 — 기본 숨김 + 토글(체크박스 해킹, 순서·계층 유지) */
+  .ds-offtoggle { position: absolute; left: -9999px; width: 0; height: 0; opacity: 0; }
+  .ds-items.has-off > .ds-doc-off { display: none; }
+  .ds-offtoggle:checked ~ .ds-items.has-off > .ds-doc-off { display: flex; }
+  .ds-offlabel { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; font-size: 12px; color: var(--fg-3); padding: 7px 16px 2px; user-select: none; }
+  .ds-offlabel:hover { color: var(--fg-2); }
+  .ds-offlabel::after { content: "▾"; font-size: 9px; }
+  .ds-offtoggle:checked ~ .ds-offlabel::after { content: "▴"; }
+  .docs-unified .ds-offlabel { padding-left: 6px; }
 
   /* ── 우측 패널: 상세 추론 플로우(시간순 타임라인) ── */
   .flow-list { position: relative; display: flex; flex-direction: column; }
