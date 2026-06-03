@@ -15,6 +15,10 @@ def _reject_reducer(old, new):   # record 도구 거부 카운터 — 거부=+1 
     return 0 if new == 0 else (old or 0) + new
 
 
+def _keep_true(a, b):   # 병렬 도구가 같은 스텝에 _delegated를 동시 갱신해도 충돌(InvalidUpdateError) 대신 OR 병합. 단조 True(False로 안 돌림).
+    return bool(a) or bool(b)
+
+
 # ── 근거계약 공통 토대 (MASTER_PLAN item 0) ─────────────────────────────
 # 0a. 공통 UnresolvedBy enum — 미해결 분류 단일 정의(전 모델 동일). unknown→none 조용한 강등 금지.
 _UNRESOLVED = Literal["none", "agent", "user", "authority", "data_unavailable", "tool_budget_exhausted"]
@@ -319,7 +323,7 @@ class GaneomteoState(TypedDict):
     # ── 판정
     act_landuse_raw: NotRequired[str]   # act_landuse 원시 신호(REG_NM·NODE_DESC detail) — 표시/probe만, verdict 입력 아님(item 3 rename·재오염 방지)
     act_reg_raw: NotRequired[list]
-    _delegated: NotRequired[bool]
+    _delegated: Annotated[bool, _keep_true]   # 여러 도구가 한 병렬 스텝에 동시 set → 충돌 대신 OR(검수: InvalidUpdateError 차단)
     doc_index_hit: NotRequired[bool]   # 조례 RAG 인덱스 HIT 여부(가늠터 UI 트레이스 노출)
     verdict: NotRequired[str]
     _llm_verdict: NotRequired[str]                     # record_verdict가 LLM 합성으로 커밋한 최종판정(build_reasoning이 _derive_verdict 대신 사용; 없으면 fallback)
