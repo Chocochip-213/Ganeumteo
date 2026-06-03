@@ -911,7 +911,7 @@ function parkingCard(card) {
     return `<div class="kv-cell"><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`;
   }).filter(Boolean).join("");
   if (!rows) return "";
-  return `<div class="card card-pad mini-card"><div class="card-h" style="padding:0 0 6px">🅿 주차 기준</div><div class="kv-grid" style="padding:2px 0 0">${rows}</div></div>`;
+  return `<div class="card card-pad mini-card"><div class="card-h" style="padding:0 0 6px">주차 기준</div><div class="kv-grid" style="padding:2px 0 0">${rows}</div></div>`;
 }
 
 // 다차원 판정 축(LLM이 record_verdict로 케이스마다 생성 — 코드 고정목록 없음). 종합 verdict 아래 투명 표시.
