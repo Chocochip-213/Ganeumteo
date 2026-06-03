@@ -204,7 +204,7 @@ def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
              if any("가능" in r for r in regs) and any("금지" in r for r in regs)
              else f"{node} → {'/'.join(sorted(regs))}")
         cites.append(Citation(source="data", law_name="행위제한(국토부 1613000)", article=ref_law, quote=q, source_id=eid).model_dump())
-    detail = " / ".join(f"{d.get('node', '')}={d['reg']}({d.get('ref_law', '')})" for d in det) or "빈값"
+    detail = " / ".join(f"{d.get('node', '')}={d['reg']}({d.get('ref_law', '')})" + (f"[정의:{d['def_ref']}]" if d.get('def_ref') else "") for d in det) or "빈값"
     upd = {"act_landuse_raw": f"{raw_signal} | {detail}", "act_reg_raw": rg, "_delegated": True,
            "citations": cites, "evidence_records": ev, "_toolcalls": ["act_landuse"],
            "messages": [_tm(f"행위제한 raw {use_type}@{zone_ucode}: {detail} ({raw_signal}) — NODE_DESC↔의도용도 일치 확인 후 record_landuse_resolution로 판정하라(근거ID:{eid})", tool_call_id)]}
