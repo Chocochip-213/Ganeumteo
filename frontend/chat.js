@@ -1027,7 +1027,7 @@ function verdictCard(env, card, cits, full) {
     ${verdictAxes(card)}
     ${isAbstainShape ? abstainBlock(card) : ""}
     ${checkRows ? `<details class="disclose"><summary>검토한 항목 ${viewSteps.length}개 보기 <span class="chev">${I.chev}</span></summary><div class="dbody"><div class="check-list">${checkRows}</div></div></details>` : ""}
-    ${riskHtml ? `<div class="card-h">${I.bang} 미리 알아둘 점</div><div class="risk-list">${riskHtml}</div>` : ""}
+    ${riskHtml ? `<details class="disclose"><summary>${I.bang} 미리 알아둘 점 ${risks.length}개 보기 <span class="chev">${I.chev}</span></summary><div class="dbody"><div class="risk-list">${riskHtml}</div></div></details>` : ""}
     ${nextHtml ? `<div class="card-h">${I.route} 다음에 해야 할 일</div><ol class="next-list">${nextHtml}</ol>` : ""}
     <details class="disclose"><summary>판단 근거 ${discloseN}개 보기 <span class="chev">${I.chev}</span></summary>
       <div class="dbody">${discloseHtml}<div class="cite-meta">법적 근거 ${substN}건${cits.length > substN ? ` · 입지 출처 ${cits.length - substN}건(법적 근거 아님)` : ""}</div></div>
