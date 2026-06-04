@@ -254,6 +254,12 @@ def _byeolpyo_body(b):
     full = L.byeolpyo_text(raw)                          # .hwp(PARA_TEXT 레코드)·.hwpx 자동 — 통째 utf-16 디코드 쓰레기 방지
     return re.sub(r"\s+", " ", full).strip() if full else None
 
+def _bundle_byeolpyo_units(units):
+    """zone별 별표 제목이 없는 지자체(화성='별표'·용인='별표'·이천='[별표]제1종전용주거…외'·범위'[별표1]~[별표28]')는
+    용도지역 별표 전체를 한 첨부로 묶음. 서식/별지(폼) 아닌 첨부 별표들을 후보로(zone 실재는 호출부가 본문서 검증)."""
+    return [b for b in units if isinstance(b, dict) and _S(b.get("별표첨부파일명"))
+            and "별지" not in _S(b.get("별표제목")) and "서식" not in _S(b.get("별표제목"))]
+
 def _search_zone_byeolpyo(query, locality, zone):
     """query로 조례 검색 → locality 든 후보(광역 단위 조례 우선) 중 zone 별표 본문을 찾으면 (본문, meta, 광역명)."""
     cands = [it for it in (L.ordin_search(query).get("items") or []) if (not locality or locality in _S(it.get("자치법규명")))]
@@ -263,11 +269,16 @@ def _search_zone_byeolpyo(query, locality, zone):
         nm = _S(it.get("자치법규명"))
         last_nm = nm
         wide = wide or (_S(it.get("지자체기관명")).split() or [""])[0]   # 후보 기관명 첫 토큰=광역명(폴백 키)
-        b = _pick_zone_byeolpyo(_byeolpyo_units(L.ordin_service(it.get("자치법규일련번호") or it.get("MST"))), zone)
-        if not b: continue
-        body = _byeolpyo_body(b)
-        if not body: continue
-        return body, {"조례명": nm, "별표": _S(b.get("별표번호")) + " " + _S(b.get("별표제목"))[:30]}, wide
+        units = _byeolpyo_units(L.ordin_service(it.get("자치법규일련번호") or it.get("MST")))
+        b = _pick_zone_byeolpyo(units, zone)
+        if b:
+            body = _byeolpyo_body(b)
+            if body:
+                return body, {"조례명": nm, "별표": _S(b.get("별표번호")) + " " + _S(b.get("별표제목"))[:30]}, wide
+        for bund in _bundle_byeolpyo_units(units):   # zone별 별표 없으면 통합첨부(서식제외)서 zone 본문 검색(화성·용인·이천 등)
+            full = _byeolpyo_body(bund)
+            if full and _nows(zone) in _nows(full):   # 통합본문에 zone 실재하면 그 본문 반환(LLM이 zone 부분 찾아 읽음)
+                return full, {"조례명": nm, "별표": _S(bund.get("별표제목"))[:24] + f"(통합·{zone} 검색)"}, wide
     return None, {"조례명": last_nm}, wide
 
 def _ordin_bodytext(sigungu, zone):
