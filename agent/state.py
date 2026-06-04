@@ -324,7 +324,7 @@ class GaneomteoState(TypedDict):
     act_landuse_raw: NotRequired[str]   # act_landuse 원시 신호(REG_NM·NODE_DESC detail) — 표시/probe만, verdict 입력 아님(item 3 rename·재오염 방지)
     act_reg_raw: NotRequired[list]
     _delegated: Annotated[bool, _keep_true]   # 여러 도구가 한 병렬 스텝에 동시 set → 충돌 대신 OR(검수: InvalidUpdateError 차단)
-    doc_index_hit: NotRequired[bool]   # 조례 RAG 인덱스 HIT 여부(가늠터 UI 트레이스 노출)
+    doc_index_hit: Annotated[bool, _keep_true]   # 조례 RAG 인덱스 HIT 여부(UI 트레이스). 병렬 ordin 도구 2개가 한 스텝에 동시 write → 충돌 대신 OR(_delegated와 동형, 라이브검출 crash)
     verdict: NotRequired[str]
     _llm_verdict: NotRequired[str]                     # record_verdict가 LLM 합성으로 커밋한 최종판정(build_reasoning이 _derive_verdict 대신 사용; 없으면 fallback)
     document_facts: Annotated[dict, _merge_facts]      # 사용자가 확인해준 서류판단 사실(권원·공동소유·사전결정·분할납부 등) — request_human_input이 durable 저장, 카드 노출
