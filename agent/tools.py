@@ -227,7 +227,7 @@ def _mark_trunc(cite, full_len, cap, offset=0):
     return cite
 
 
-def _nows(x): return re.sub(r"\s+", "", _S(x))         # 공백 무시 비교(별표제목 '제1종 일반' vs zone '제1종일반')
+def _nows(x): return re.sub(r"[\s_]+", "", _S(x))      # 공백·언더스코어 무시 비교(별표제목 '제1종 일반' vs zone '제1종일반'; law.go.kr이 일부 별표제목을 '계획관리지역_안에서_건축할_수_없는'처럼 _로 반환 → _도 normalize 안 하면 관리지역 별표 매칭 실패=false data_unavailable)
 
 def _byeolpyo_units(j):
     bu = j.get("별표", {}).get("별표단위") if isinstance(j.get("별표"), dict) else None
