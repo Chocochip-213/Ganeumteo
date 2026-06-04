@@ -607,23 +607,34 @@ def parking_quota(use_type: str, floor_area: float, base_area_m2: float,
                   evidence_id: Annotated[str, Field(description="기준면적(base_area_m2)을 읽은 근거 evidence_id — law_byeolpyo_fetch가 ToolMessage 머리에 준 '근거ID:...'. state에 실재해야(임의 값 차단).")] = "",
                   prior_base_area_m2: Annotated[float, Field(description="용도변경일 때만 — 변경 *전* 용도의 기준면적(㎡/대). 주면 비고5/7 적용(변경부분 신규소요 − 기존 산정대수, 1대 미만이면 0). 신축이면 비우거나 0.")] = 0.0,
                   prior_evidence_id: Annotated[str, Field(description="prior_base_area_m2를 읽은 근거 evidence_id(별표1, state 실재). prior_base 줄 때 동반.")] = "",
+                  tier_threshold_m2: Annotated[float, Field(description="단독/공동주택 등 *계단식* 산식일 때만 — 별표1의 계단 임계면적(예 단독주택 150㎡). 주면 base_area_m2 대신 계단식 적용. 균등식이면 0.")] = 0.0,
+                  tier_base_spaces: Annotated[float, Field(description="계단식: 임계면적까지의 기본 대수(예 단독주택 1대). tier_threshold_m2와 함께.")] = 0.0,
+                  tier_increment_m2: Annotated[float, Field(description="계단식: 임계 초과분 1대당 면적(예 단독주택 100㎡/대). tier_threshold_m2와 함께.")] = 0.0,
                   state: Annotated[dict, InjectedState] = None,
                   tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
-    """부설주차장 소요대수(법 산식만, 결정적). 신축=ceil_05(시설면적 ÷ 용도별 기준면적), 비고6: 0.5이상→올림.
-    **용도변경**이면 prior_base_area_m2(변경 전 용도 기준면적)도 전달 → 주차장법 별표1 **비고5(변경부분만)·비고7(산정대수 1대 미만이면 0)** 적용해 *순증분*만 산정(신축식 과대산정 차단).
-    **base_area_m2·prior_base_area_m2는 인자 — LLM이 law_byeolpyo_fetch로 주차장 별표1서 각 용도 기준면적을 읽어 전달**(도구에 용도→기준면적 하드코딩 없음, 각 근거 evidence_id 동반·실재). 조례 강화배율 별도(미반영 시 확인필요)."""
+    """부설주차장 소요대수(법 산식만, 결정적). 신축 균등=ceil_05(시설면적 ÷ 용도별 기준면적), 비고6: 0.5이상→올림.
+    **용도변경**이면 prior_base_area_m2(변경 전 용도 기준면적)도 전달 → 별표1 **비고5(변경부분만)·비고7(1대 미만→0)** 순증분만 산정(신축식 과대산정 차단).
+    **단독/공동주택 등 계단식 산식**(별표1: 예 단독주택 '150㎡ 초과시 1+(면적−150)/100')이면 base_area_m2 대신 tier_threshold_m2·tier_base_spaces·tier_increment_m2를 별표1서 읽어 전달 → 균등식 오산 방지.
+    **모든 수치는 인자 — LLM이 law_byeolpyo_fetch로 주차장 별표1서 읽어 전달**(도구에 용도→기준 하드코딩 없음, evidence_id 동반·실재). 조례 강화배율 별도(미반영 시 확인필요)."""
     state = state or {}
     _eids = collect_evidence_ids(state)
-    if not base_area_m2 or base_area_m2 <= 0:
-        return Command(update={"parking_req": {"status": "확인필요", "note": "기준면적(base_area_m2) 미전달 — 시행령 별표1서 용도별 기준면적 읽어 재호출"},
-                               "_toolcalls": ["parking_quota"],
-                               "messages": [_tm("부설주차 확인필요: 용도별 기준면적 필요(별표1)", tool_call_id)]})
-    if not evidence_id or evidence_id not in _eids:   # item 7: 기준면적 값 근거 실재 검증(날조 차단)
-        return Command(update={"parking_req": {"status": "확인필요", "note": "기준면적 근거(evidence_id) 미동반/미실재 — 주차장법 별표1 fetch 후 그 근거ID와 함께 재호출"},
-                               "_toolcalls": ["parking_quota"],
-                               "messages": [_tm("부설주차 확인필요: 기준면적 근거(evidence_id) 필요", tool_call_id)]})
     _ceil05 = lambda r: (math.ceil(r) if (r - math.floor(r)) >= 0.5 or r == math.floor(r) else math.floor(r))
-    if prior_base_area_m2 and prior_base_area_m2 > 0:   # 용도변경 — 비고5/7 순증분
+    _tiered = bool(tier_threshold_m2 and tier_threshold_m2 > 0 and tier_increment_m2 and tier_increment_m2 > 0)
+    if not _tiered and (not base_area_m2 or base_area_m2 <= 0):
+        return Command(update={"parking_req": {"status": "확인필요", "note": "기준면적(base_area_m2) 또는 계단식 파라미터 미전달 — 시행령 별표1서 용도별 산정기준 읽어 재호출"},
+                               "_toolcalls": ["parking_quota"],
+                               "messages": [_tm("부설주차 확인필요: 용도별 산정기준 필요(별표1)", tool_call_id)]})
+    if not evidence_id or evidence_id not in _eids:   # item 7: 산정기준 값 근거 실재 검증(날조 차단)
+        return Command(update={"parking_req": {"status": "확인필요", "note": "산정기준 근거(evidence_id) 미동반/미실재 — 주차장법 별표1 fetch 후 그 근거ID와 함께 재호출"},
+                               "_toolcalls": ["parking_quota"],
+                               "messages": [_tm("부설주차 확인필요: 산정기준 근거(evidence_id) 필요", tool_call_id)]})
+    if _tiered:   # 단독/공동주택 등 계단식(별표1): 기본대수 + 임계초과분/증분, 비고6
+        raw = tier_base_spaces + max(0.0, floor_area - tier_threshold_m2) / tier_increment_m2
+        spaces = max(_ceil05(raw), 0)
+        _detail = f"계단식(별표1): {tier_base_spaces}대(≤{tier_threshold_m2}㎡) + ({floor_area}−{tier_threshold_m2})/{tier_increment_m2} = {raw:.2f} → {spaces}대"
+        _note = "부설주차 계단식 산식(단독/공동주택 등 별표1). 조례 강화배율 미반영(확인필요)"
+        _basev = f"계단식 임계{tier_threshold_m2}㎡·기본{tier_base_spaces}대·증분{tier_increment_m2}㎡/대"
+    elif prior_base_area_m2 and prior_base_area_m2 > 0:   # 용도변경 — 비고5/7 순증분
         if not prior_evidence_id or prior_evidence_id not in _eids:   # 변경전 기준도 근거 실재(날조 차단)
             return Command(update={"parking_req": {"status": "확인필요", "note": "변경전 기준면적 근거(prior_evidence_id) 미동반/미실재 — 별표1 fetch 후 재호출"},
                                    "_toolcalls": ["parking_quota"],
@@ -631,20 +642,23 @@ def parking_quota(use_type: str, floor_area: float, base_area_m2: float,
         net = floor_area / base_area_m2 - floor_area / prior_base_area_m2
         spaces = 0 if net < 1 else _ceil05(net)   # 비고7: 1대 미만 → 0
         spaces = max(spaces, 0)
-        raw = net
         _detail = f"용도변경 순증분(비고5/7): 변경부분 {floor_area}㎡ × (1/{base_area_m2} − 1/{prior_base_area_m2}) = {net:.2f}대 → {spaces}대"
         _note = "부설주차 용도변경 산식(비고5 변경부분·비고7 1대미만 0). 조례 강화배율 미반영(확인필요)"
-    else:   # 신축
+        _basev = f"{base_area_m2}㎡/대, 변경전 {prior_base_area_m2}㎡/대(비고5/7)"
+    else:   # 신축 균등
         raw = floor_area / base_area_m2
         spaces = max(_ceil05(raw), 0)
         _detail = f"시설면적 {floor_area}㎡ ÷ 기준 {base_area_m2}㎡/대 = {raw:.2f}→비고6"
-        _note = "부설주차 신축 산식(ceil_05). 조례 강화배율 미반영(확인필요)"
+        _note = "부설주차 신축 균등 산식(ceil_05). 조례 강화배율 미반영(확인필요)"
+        _basev = f"{base_area_m2}㎡/대"
     cite = Citation(source="law", law_name="주차장법 시행령", article="별표1",
-                    quote=f"{use_type} 기준면적 {base_area_m2}㎡/대" + (f", 변경전 {prior_base_area_m2}㎡/대(비고5/7)" if prior_base_area_m2 else "") + "(LLM이 별표1서 읽어 전달)").model_dump()
-    pr = {"use_type": use_type, "floor_area": floor_area, "base_area_m2": base_area_m2,
+                    quote=f"{use_type} 산정기준 {_basev}(LLM이 별표1서 읽어 전달)").model_dump()
+    pr = {"use_type": use_type, "floor_area": floor_area, "base_area_m2": base_area_m2 or None,
           "spaces": spaces, "status": "산출", "note": _note}
     if prior_base_area_m2:
         pr["prior_base_area_m2"] = prior_base_area_m2
+    if _tiered:
+        pr["tier"] = {"threshold_m2": tier_threshold_m2, "base_spaces": tier_base_spaces, "increment_m2": tier_increment_m2}
     return Command(update={"parking_req": pr, "citations": [cite], "_toolcalls": ["parking_quota"],
                            "messages": [_tm(f"부설주차 {spaces}대 ({_detail})", tool_call_id)]})
 
