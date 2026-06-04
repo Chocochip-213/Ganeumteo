@@ -50,6 +50,8 @@ def dig(j,k): return re.findall(rf'"{k}"\s*:\s*"([^"]*)"',json.dumps(j,ensure_as
 # 코드는 '어느 레이어를 POINT로 탐지하나'만, 효과·가부 판정 0(reg_overlaps 합류 → reg_effect_resolve→record_reg_resolution→게이트가 LLM 판정).
 # getLandUseAttr(지역지구)에 안 잡히던 공간겹침 보호구역·도시계획시설저촉 탐지(없으면 silent miss=거짓'가능'). 교육환경/홍수/보전산지정밀은 레이어 부재(§8 honest-limit)라 제외.
 # 백두대간(LT_C_WKMBBSN)은 req/data가 geomFilter 무시→전 지점 feats=1 false-positive(역삼·부산·양평·태백 라이브검증 모두 1)라 제외 — 배선시 모든 진단에 백두대간 거짓플래그. WFS 전용 추정(후속 GetCapabilities probe 대상).
+# R1 verify-before-wire(2026-06, _vworld_*_probe.py): 아래 전 코드를 WFS GetCapabilities 카탈로그 대조(전부 실재, req/data 대소문자 무관)+전국 BBOX size=1(전부 데이터 존재)+6지점 POINT geomFilter로 검증.
+# 전 코드 geomFilter 정상(false-positive 0; WKMBBSN처럼 전지점 HIT인 코드 없음). 6지점서 ZERO인 코드들(농업진흥·도시계획시설도로·개발행위제한·국가유산·재해·야생·습지)은 broken 아니라 희소규제 미겹침(BBOX엔 데이터 존재).
 RISK_LAYERS = [
  ("LT_C_UM710", "상수원보호구역"), ("LT_C_AGRIXUE101", "농업진흥지역"),
  ("LT_C_UPISUQ151", "도시계획시설(도로)저촉"), ("LT_C_UPISUQ153", "도시계획시설(공원·녹지)저촉"),
@@ -57,6 +59,7 @@ RISK_LAYERS = [
  ("LT_C_UO301", "국가유산보호구역"), ("LT_C_UP201", "재해위험지구"),
  ("LT_C_UM221", "야생생물보호구역"), ("LT_C_UM901", "습지보호지역"),
  ("LT_C_UPISUQ161", "지구단위계획구역"),   # probe+라이브검증 OK(역삼·부산 positive / 양평·태백 NOT_FOUND — geomFilter 정상). 세부지침 본문은 포털전용 honest-limit이라 '구역 해당'만 탐지 → LLM이 확인필요+actionable경로 판정.
+ ("LT_C_UO101", "교육환경보호구역"),   # R1 신규: positive(노원 중계동 학교밀집 HIT)/negative(역삼·태백·순천 NOT_FOUND) 검증 — geomFilter 정상·false-positive 0. 학교 200m 정화구역(숙박·유흥 등 금지) 입지차단 탐지. (메모리 vworld-risk-layers-unwired 정정: uo101은 VWorld 가용)
 ]
 def risk_overlaps(x, y):
     """인허가 입지 risk 공간레이어를 POINT(x y) geomFilter로 탐지 → 겹치는 규제명 리스트. 탐지만(verdict 0).
