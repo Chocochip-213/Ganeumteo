@@ -60,6 +60,7 @@ RISK_LAYERS = [
  ("LT_C_UM221", "야생생물보호구역"), ("LT_C_UM901", "습지보호지역"),
  ("LT_C_UPISUQ161", "지구단위계획구역"),   # probe+라이브검증 OK(역삼·부산 positive / 양평·태백 NOT_FOUND — geomFilter 정상). 세부지침 본문은 포털전용 honest-limit이라 '구역 해당'만 탐지 → LLM이 확인필요+actionable경로 판정.
  ("LT_C_UO101", "교육환경보호구역"),   # R1 신규: positive(노원 중계동 학교밀집 HIT)/negative(역삼·태백·순천 NOT_FOUND) 검증 — geomFilter 정상·false-positive 0. 학교 200m 정화구역(숙박·유흥 등 금지) 입지차단 탐지. (메모리 vworld-risk-layers-unwired 정정: uo101은 VWorld 가용)
+ ("LT_C_UP401", "급경사재해예방지역"),   # R1 신규: feature-centroid positive 검증 HIT/역삼 negative — 급경사지 개발제약. (산림보호 uf151·습지보호구역 wgisarwet은 보류: uf151 centroid 미탐지 미검증, wgisarwet은 기존 습지보호지역 UM901과 중복 회피)
 ]
 def risk_overlaps(x, y):
     """인허가 입지 risk 공간레이어를 POINT(x y) geomFilter로 탐지 → 겹치는 규제명 리스트. 탐지만(verdict 0).
