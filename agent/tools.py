@@ -103,8 +103,13 @@ def get_parcel(x: float, y: float, tool_call_id: Annotated[str, InjectedToolCall
     jimok = _JIMOK.get(jimok, jimok)
     addr = pc.get("addr", "") or ""
     toks = addr.split()
-    sigungu = ([t for t in toks if t.endswith("시")] or [t for t in toks if t.endswith("군")]
-               or [t for t in toks if t.endswith("구")] or [""])[0]
+    _gwang = [t for t in toks if t.endswith(("광역시", "특별시", "특별자치시"))]   # 광역시·특별시 토큰
+    _gu = [t for t in toks if t.endswith("구")]
+    if _gwang and _gu:
+        sigungu = f"{_gwang[0]} {_gu[0]}"   # 광역시 자치구는 '시도+구'로 한정(검수: '서구'가 광주·부산·대전 등 여러 시에 있어 모호 → 잘못된 시 조례 인용 차단). 자치구 조례 없으면 _ordin_bodytext 광역 폴백이 시도 조례로.
+    else:
+        sigungu = ([t for t in toks if t.endswith("시")] or [t for t in toks if t.endswith("군")]
+                   or _gu or [""])[0]
     road = W.dig(pc, "roadSideCodeNm")
     road = road[0] if road else None
     _peid = _ev_id("api", "parcel", pnu)   # item 0b: 필지 EvidenceRecord(지목·도로접면 근거)
