@@ -19,8 +19,12 @@ def _keep_true(a, b):   # 병렬 도구가 같은 스텝에 _delegated를 동시
     return bool(a) or bool(b)
 
 
-def _keep_last(a, b):   # dict 채널(envelope)에 병렬 도구가 같은 스텝에 동시 write해도 충돌 대신 last-write-wins(빈값이면 기존 유지). compute_envelope 중복호출 crash 차단.
+def _keep_last(a, b):   # 단일값 채널에 병렬 도구가 같은 superstep에 동시 write해도 충돌 대신 last-write-wins(빈값이면 기존 유지). 중복/경합 호출 crash 차단. 도메인-중립(의미판정 0).
     return b if b else a
+
+
+def _keep_truthy_first(a, b):   # 순서-의존 채널(road_side 등) — '채워진 값 보존, 둘 다 채워지면 뒤 값'. None이 의미를 갖는(get_land_use None이 get_parcel 맹지값 덮으면 안 됨) 채널 전용. 도구내부 순서방어를 reducer로 끌어올림(병렬 안전·의미판정 아님).
+    return b if b else (a if a else b)
 
 
 # ── 근거계약 공통 토대 (MASTER_PLAN item 0) ─────────────────────────────
@@ -313,24 +317,25 @@ class GaneomteoState(TypedDict):
     floor_count: int
     work_type: NotRequired[str]
     # ── 입지 (도구가 Command(update)로 충전 — 부록 G2.1)
-    _xy: NotRequired[list]
-    pnu: NotRequired[str]
-    area_cd: NotRequired[str]
-    sigungu: NotRequired[str]
-    jimok: NotRequired[str]
-    zone: NotRequired[str]
-    zone_ucodes: NotRequired[list]
-    road_side: NotRequired[str]
-    land_price: NotRequired[Optional[int]]
-    land_area: NotRequired[Optional[float]]   # 대지면적 lndpclAr(㎡) — get_land_use가 추출, 부담금·envelope 입력
+    # 입지 단일값 채널 — get_parcel·get_land_use·geocode가 한 superstep 병렬/중복 호출되면 동시 write 충돌(InvalidUpdateError) → reducer로 차단(systemic: _delegated/envelope와 동형, Claude Code read-only병렬/write직렬 철학을 LangGraph 채널레벨로 구현)
+    _xy: Annotated[list, _keep_last]
+    pnu: Annotated[str, _keep_last]
+    area_cd: Annotated[str, _keep_last]
+    sigungu: Annotated[str, _keep_last]
+    jimok: Annotated[str, _keep_last]
+    zone: Annotated[str, _keep_last]
+    zone_ucodes: Annotated[list, _keep_last]
+    road_side: Annotated[str, _keep_truthy_first]   # 순서-의존: get_land_use None이 get_parcel 맹지값 덮으면 안 됨(tools.py 내부방어를 reducer로)
+    land_price: Annotated[Optional[int], _keep_last]
+    land_area: Annotated[Optional[float], _keep_last]   # 대지면적 lndpclAr(㎡) — get_land_use가 추출, 부담금·envelope 입력
     reg_overlaps: Annotated[list, operator.add]
     # ── 판정
-    act_landuse_raw: NotRequired[str]   # act_landuse 원시 신호(REG_NM·NODE_DESC detail) — 표시/probe만, verdict 입력 아님(item 3 rename·재오염 방지)
-    act_reg_raw: NotRequired[list]
+    act_landuse_raw: Annotated[str, _keep_last]   # act_landuse 원시 신호(REG_NM·NODE_DESC detail) — 표시/probe만, verdict 입력 아님(item 3 rename·재오염 방지). reducer: act_landuse 중복 병렬호출 충돌 차단
+    act_reg_raw: Annotated[list, _keep_last]
     _delegated: Annotated[bool, _keep_true]   # 여러 도구가 한 병렬 스텝에 동시 set → 충돌 대신 OR(검수: InvalidUpdateError 차단)
     doc_index_hit: Annotated[bool, _keep_true]   # 조례 RAG 인덱스 HIT 여부(UI 트레이스). 병렬 ordin 도구 2개가 한 스텝에 동시 write → 충돌 대신 OR(_delegated와 동형, 라이브검출 crash)
-    verdict: NotRequired[str]
-    _llm_verdict: NotRequired[str]                     # record_verdict가 LLM 합성으로 커밋한 최종판정(build_reasoning이 _derive_verdict 대신 사용; 없으면 fallback)
+    verdict: Annotated[str, _keep_last]
+    _llm_verdict: Annotated[str, _keep_last]            # record_verdict가 LLM 합성으로 커밋한 최종판정(build_reasoning이 _derive_verdict 대신 사용; 없으면 fallback). reducer: record_verdict 중복 병렬호출 충돌 차단
     document_facts: Annotated[dict, _merge_facts]      # 사용자가 확인해준 서류판단 사실(권원·공동소유·사전결정·분할납부 등) — request_human_input이 durable 저장, 카드 노출
     # ── 산출 (누적=operator.add)
     uijae: Annotated[list, operator.add]
@@ -339,19 +344,19 @@ class GaneomteoState(TypedDict):
     reg_effects: Annotated[list, operator.add]
     jorye_verdicts: Annotated[list, operator.add]
     verdict_labels: Annotated[list, operator.add]     # record_verdict 다차원 판정 축(축 이름·개수는 LLM이 케이스마다 정함 — 코드 고정목록 없음)
-    _verdict_round: NotRequired[list]                 # 최신 record_verdict 라운드 라벨만(last-write-wins) — 카드는 이걸 써 다라운드 stale 축 제거(U3)
+    _verdict_round: Annotated[list, _keep_last]        # 최신 record_verdict 라운드 라벨만(last-write-wins) — 카드는 이걸 써 다라운드 stale 축 제거(U3). reducer: 중복 병렬호출 충돌 차단
     # ── 근거계약·신규 산출 (MASTER_PLAN item 0 토대; append-only/merge, latest selector로 읽음 — 0g)
     evidence_records: Annotated[dict, _merge_evidence]     # evidence_id → EvidenceRecord(원문 store, quote 실재검증 토대 0b-2)
     procedure_steps: Annotated[list, _merge_steps]        # 인허가 절차 타임라인(record_procedure_steps) — documents와 분리(item 10)
-    procedure_frame: NotRequired[list]                    # procedure_framework_tool 라우팅 산출(표준단계+법조 포인터) — 체크리스트, last-write 충분(reducer 불요)
+    procedure_frame: Annotated[list, _keep_last]          # procedure_framework_tool 라우팅 산출(표준단계+법조 포인터) — 체크리스트, last-write-wins. reducer: 중복 병렬호출 동시쓰기 충돌 차단
     landuse_resolutions: Annotated[list, operator.add]    # record_landuse_resolution(행위제한 LLM 판정) — 코드 act_verdict 긍정 대체(item 3)
     use_classifications: Annotated[list, operator.add]    # record_use_classification(생활어→canonical use 별표1, item 4)
     work_type_resolutions: Annotated[list, operator.add]  # record_work_type(WorkTypeResolution 구조화) — 맹지/절차 게이트가 읽는 단일원(item 9·0d)
-    author: NotRequired[dict]
-    term_notes: NotRequired[dict]            # 진단맥락 용어설명(에이전트가 state 사실로 생성) — 프론트 popover(when_note 패턴)
-    scale_limits: NotRequired[dict]          # compute_scale 전용(에너지/구조안전 — 실 연면적 기준)
+    author: Annotated[dict, _keep_last]      # author_rule_tool 산출 — reducer: 중복 병렬호출 충돌 차단
+    term_notes: Annotated[dict, _keep_last]  # 진단맥락 용어설명(에이전트가 state 사실로 생성) — 프론트 popover(when_note 패턴). reducer: explain_terms 중복 충돌 차단
+    scale_limits: Annotated[dict, _keep_last]  # compute_scale 전용(에너지/구조안전 — 실 연면적 기준). reducer: 중복 병렬호출 충돌 차단
     envelope: Annotated[dict, _keep_last]    # compute_envelope 전용(건폐율·용적률 최대치) — scale_limits와 분리 + reducer로 병렬 중복호출 동시쓰기 충돌(InvalidUpdateError) 차단(_delegated·doc_index_hit과 동형)
-    parking_req: NotRequired[dict]           # parking_quota 산출(부설주차 N대) — scale_limits와 분리(덮어쓰기 충돌 방지)
+    parking_req: Annotated[dict, _keep_last]  # parking_quota 산출(부설주차 N대) — reducer: 중복 병렬호출 동시쓰기 충돌 차단
     levies: Annotated[list, operator.add]    # 부담금(농지보전·대체산림·개발) — levy_estimate가 누적
     citations: Annotated[list, operator.add]
     abstentions: Annotated[list, operator.add]

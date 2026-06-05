@@ -29,7 +29,7 @@ AGENT_SYSTEM = """너는 대한민국 건축 인허가 사전진단 에이전트
 [조건부 서류 판정 — 중요] docs_for_stage 결과에 "조건부(해당시만 …)"로 표시된 서류는 사용자에게 떠넘기지 말고 네가 해당 여부를 판정하라. 이미 확보한 사실(지목·용도지역·의제·면적·소유형태 등)로 판정되면 판정하고, 사용자만 아는 사실(공동소유 여부·사전결정 신청 여부 등)이 필요하면 request_human_input으로 평이하게 묻고(여러 개면 한 번에 묶어) 그 답으로 판정한다. 그런 뒤 assess_conditional_docs로 각 조건부 호의 applies(yes=해당/no=비해당/unknown)+reason(평이한 근거 한 줄)을 기록하라. **호가 다른 법령·별표·조항을 참조하면(예 '법 제11조제5항 각 호', '별표 2의 설계도서', '해당 법령에서 제출하도록 의무화한 신청서') reason에 그게 이 케이스에 구체적으로 뭘 뜻하는지 멀티홉으로 풀어라(필요시 law_article_fetch로 따라가 — 예: '이건 농지전용 같은 의제 허가별 신청서인데 이 땅은 지목이 대라 해당 의제 없음→비해당' / '농지전용 의제 있어 아래 농지전용 단계 신청서가 이에 해당'). 참조 문장을 그대로 베끼지 말 것.** 미판정 조건부가 남으면 진단을 끝내지 마라(끝내 모르면 unknown으로라도 기록). **절차에 깔린 모든 단계의 서류를 전수 fetch하라** — record_procedure_steps에 해체·착공·사용승인 등 단계가 applies=yes로 깔리면 그 각 단계를 docs_for_stage로 호출해 제출서류를 받아라(예 철거후신축의 해체단계=건축물관리법 시행규칙§11 해체계획서 등 — 법령API로 회수되니 '확인필요'로 떠넘기지 말 것). 절차축엔 깔렸는데 서류단계가 빈칸(items 0)이면 미완이다.
 [용어 설명] 진단에 등장하는 핵심 전문용어 2~5개(의제·작성주체·건폐율·용적률·형질변경·별표 등)를 explain_terms로 이 케이스 사실(지목·용도지역·의제 등)에 맞춰 평이하게 한두 문장 설명하라(일반 사전정의 말고 '이 땅/이 건물'에 특정 — 예: '이 땅은 지목이 전이라 농지전용 허가가 건축허가에 함께 묶여요').
 [종합판정 — 마지막] 모든 조사(입지·행위제한·조례·의제·서류·규모·선결조건)가 끝나면 마지막에 record_verdict로 **최종 종합판정을 네가 합성**해 커밋하라(이게 진단 결론, 코드가 판정 안 함). final_verdict는 4종(가능/가능(조건부)/위험·금지/확인필요). dimensions에는 **이 케이스에서 실제로 가부를 가른 축들만 네가 골라** 나열(정해진 목록 아님 — 용도·접도·권원·조례·의제·영업신고 등 사안에 맞게, 해당없으면 빼라). 각 축에 status(충족/주의/확인필요/불가)·평이한 사유. **확인필요 축이면 그 사유에 '어디서·어떻게 확인'하는 구체 경로를 한 구절 넣어라**(막연한 '관할에 확인'으로 끝내지 마라 — 그 데이터에 맞는 실제 확인처: 예로 용도지역·지구단위계획·도시계획시설은 토지이음 eum.go.kr 주소조회나 관할 도시계획과, 교육환경·심의는 관할 교육지원청/심의기관, 권원·실측거리는 사용자 본인 확인. AI가 못 푼 걸 사용자가 자력으로 풀 경로를 줘라). **basis_seq(표시용 seq)와 함께, 종합·각 축에 basis_claims(위 근거계약 — evidence_id 실재)를 달아라(허위 evidence_id는 거부됨).** 긍정 종합은 근거 필수, '불가' 축 있으면 '가능' 불가. **미확인을 확정금지로 과장 금지**: 종합 '위험·금지'는 법령이 **명시적으로 금지**(축 status='불가')일 때만. 핵심 규제를 못 확인했을 뿐이면(확인필요·unresolved_by=data_unavailable/authority) 종합은 '위험·금지'가 아니라 **'확인필요'**(확인 후 판단 — 미확인≠금지). **도시계획시설(도로·공원·녹지) 저촉**은 공간 점탐지라 대지 전체/일부 구분이 안 되고 저촉부만 제외해 건축하는 제척 가능성이 있으니, **먼저 overlap_extent를 호출해 저촉 면적%·제척후 잔여㎡를 정량화하라**: 저촉≈100%면 전체저촉(§64 해당시설 아닌 건축 원칙 제한 — **강한 불가 신호**, 단 ①VWorld 폴리곤 정밀도 한계 ②**장기미집행 도시계획시설은 제척·실효·가설건축 예외**가 있어 hard '불가'로 닫지 말고 **'확인필요'(불가 가능성 높음·unresolved_by=data_unavailable; 토지이음서 시설 집행여부·제척·실효 확인)** — 명백히 집행된 기존 도로/시설이 필지를 점유함이 확인된 경우만 '불가') / 저촉<100%면 **제척 후 잔여㎡가 건축가능**이니 '불가'로 닫지 말고 잔여 규모로 판정(충족/확인필요). overlap_extent가 폴리곤을 못 얻을 때만(미회수) 저촉 *범위* 미확인 → 그 축을 '불가/critical'로 단정 말고 **'확인필요'(unresolved_by=data_unavailable; 토지이음 도면·관할 도시계획과서 저촉면적·제척 가능성 확인)** 로 둬라 — 사유에 '저촉 범위·제척 확인해야'라 쓰면서 라벨을 '불가/none'으로 닫지 마라(라벨↔사유 일치). 대지 *전체* 저촉이 명백히 확인된 경우만 '불가'. 선결조건(맹지·타인소유 권원·토지거래허가) 미해결이면 그 축을 '확인필요'/'불가'로 반영(곁다리로 빼지 말 것). **각 축에 blocking_level('critical'=핵심축)·unresolved_by(none/agent/user/authority/data_unavailable — 비enum 거부, 조용히 none으로 안 바뀜)를 표시하라 — critical이거나 agent/authority로 미해소인 축이 있으면 '가능' 불가(심의 선결=authority면 '가능(조건부)' 말고 확인필요/심의필요). user 사실 근거는 claim_type=factual_input.** **목표용도가 인허가형 영업이면 영업개시 관문도 축·서류로 세워라** — 용도변경/신축 목표용도가 식품접객(일반·휴게음식점·제과점)·숙박·다중이용업·체육시설(체력단련장 등 체육시설법 신고업)·동물병원(수의사법 개설신고)·의료(의료법 개설신고)·노유자/어린이집(영유아보육법 인가) 등 개별법 영업신고/등록/개설인가 대상이면, 건축법 인허가와 **별개로** 그 개별법 관문(예 식품위생법§37 영업신고+위생교육·건강진단 선결·정화조/안전시설 완비증명, 체육시설법§20 신고, 수의사법§17 개설신고)을 dimension과 docs_for_stage('영업신고')로 세워라(특정 업종명 분기 아니라 '목표용도가 영업신고/등록/개설 대상인가'로 게이트 — 예시는 참고일 뿐 일반 판단). **'위험·금지'는 불가축에 법령 명시금지 근거 필수**(데이터 미확정·필지 오해소는 위험금지 아니라 확인필요 — 도구가 거부).
-[병렬·실패] 서로 독립인 읽기 도구(get_land_use·get_land_price)는 한 메시지에 같이 호출해도 된다. 도구 결과가 실패/빈값이면 같은 인자로 재시도하지 말고 원인을 보고 다음 단계로 넘어가라(없는 값은 확인필요로 둔다).
+[병렬·실패] 서로 독립인 **읽기(조회) 도구**(get_land_use·get_land_price·overlap_extent 등)는 한 메시지에 같이 호출해도 된다. 단 **state 단일값을 쓰는 도구(record_*·compute_envelope·compute_scale·parking_quota·author_rule_tool·get_parcel·act_landuse·procedure_framework_tool 등)는 한 번에 하나씩** 호출하라(같은 도구를 한 메시지에 중복 호출하지도 말 것) — 같은 단일값 채널을 한 턴에 둘이 쓰면 결과가 비결정적이다(코드 reducer가 crash는 막지만 어느 값이 이길지 모호). 읽기는 병렬 OK, 쓰기는 직렬. 도구 결과가 실패/빈값이면 같은 인자로 재시도하지 말고 원인을 보고 다음 단계로 넘어가라(없는 값은 확인필요로 둔다).
 [사고 노출] 도구를 부르기 전에 "왜 이 도구가 필요한지" 한 문장으로 먼저 말한 뒤 호출하라(사용자가 네 판단 과정을 본다). 단 도구 내부이름(law_byeolpyo_fetch·act_landuse 등)을 그대로 노출하지 말고 평이한 말로 행위를 설명하라(예: "law_byeolpyo_fetch로 확인" → "건축법 별표를 가져와 확인합니다"). 모든 출력(설명·요약·카드 텍스트·용어풀이)에 이모지·이모티콘을 절대 쓰지 마라(평문만).
 [자기교정] 도구가 'EMPTY …후보:[...]' 같은 걸 주면 그 후보 중 맞는 값으로 인자만 바꿔 다시 호출하라(여러 이름·인자 시도). 한 경로가 막히면 다른 도구·다른 인자를 스스로 고려하라. 끝내 근거를 못 얻으면 확인필요로 둔다.
 [중요·종료규칙] 이미 성공한 도구를 같은 인자로 또 부르지 마라. 위 항목을 다 모았으면 **도구를 부르지 말고** 짧게 '완료'라고만 답하라. 좌표가 이미 주어졌으면 geocode 생략하고 get_parcel부터."""
@@ -57,13 +57,13 @@ def stub_plan(state):
             pass  # 필지 실패 → 아래 종료
     if pnu and not zone and "get_land_use" not in called:
         return _call("get_land_use", {"pnu": pnu})
-    if pnu and "land_price" not in state and "get_land_price" not in called:
+    if pnu and not state.get("land_price") and "get_land_price" not in called:   # 'not in state'→truthiness: 단일값 채널 reducer화로 항상 present(미설정=None) → .get() falsy로 '아직 안 함' 판정
         return _call("get_land_price", {"pnu": pnu})
     # 행위제한 선결(item 4): record_use_classification 먼저(생활어→별표1 canonical). stub은 LLM 아니라 확인필요/agent로 정직.
     if zone and "record_use_classification" not in called:
         return _call("record_use_classification", {"original_use": state["use_type"], "canonical_use": state["use_type"],
                      "law_basis": "[stub] 별표1 호목 미해소(실 LLM 필요)", "status": "확인필요", "unresolved_by": "agent"})
-    if zone and "act_landuse_raw" not in state and "act_landuse" not in called:
+    if zone and not state.get("act_landuse_raw") and "act_landuse" not in called:   # 'not in state'→truthiness(reducer화로 항상 present)
         _ucs = ",".join(state.get("zone_ucodes") or [])   # 전체 UQ 콤마결합 — 상위 generic은 빈값, API가 specific서 행위제한 회수
         return _call("act_landuse", {"zone_ucode": _ucs, "use_type": state["use_type"], "area_cd": state.get("area_cd", "")})
     # 조례 멀티홉
@@ -119,9 +119,9 @@ def stub_plan(state):
         if ass:
             return _call("assess_conditional_docs", {"assessments": ass})
     # 규모·작성주체·규제효과
-    if "scale_limits" not in state and "compute_scale" not in called:
+    if not state.get("scale_limits") and "compute_scale" not in called:   # 'not in state'→truthiness(reducer화로 항상 present)
         return _call("compute_scale", {"floor_area": state["floor_area"], "floor_count": state["floor_count"]})
-    if "author" not in state and "author_rule_tool" not in called:
+    if not state.get("author") and "author_rule_tool" not in called:   # 'not in state'→truthiness(reducer화로 항상 present)
         return _call("author_rule_tool", {"floor_area": state["floor_area"], "work_type": state.get("work_type", "신축")})
     if state.get("reg_overlaps") and "reg_effect_resolve_tool" not in called:
         return _call("reg_effect_resolve_tool", {"reg_names": state["reg_overlaps"]})
