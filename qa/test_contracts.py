@@ -32,9 +32,14 @@ def test_status_label_keys_match():
 # plain 필드로 되돌리면 act_landuse·ordin_*가 한 턴에 병렬 호출될 때 그래프 전체가 중단된다(검수: 라이브 crash 실발생).
 def test_delegated_concurrent_merge():
     reducer_fields = {n for n, h in S.GaneomteoState.__annotations__.items() if hasattr(h, "__metadata__")}
-    assert "_delegated" in reducer_fields, "_delegated가 리듀서(Annotated) 아님 — 병렬 도구 동시 set 시 InvalidUpdateError"
+    # 한 superstep에 병렬 도구가 동시 write할 수 있는 채널은 전부 리듀서(Annotated)여야 — plain이면 InvalidUpdateError로 그래프 crash(라이브 실발생).
+    for ch in ("_delegated", "doc_index_hit", "envelope"):
+        assert ch in reducer_fields, f"{ch}가 리듀서(Annotated) 아님 — 병렬 도구 동시 write 시 InvalidUpdateError(라이브 crash)"
     assert S._keep_true(True, True) is True and S._keep_true(None, True) is True, "OR 리듀서가 동시 True를 병합 안 함"
     assert S._keep_true(False, True) is True and S._keep_true(False, False) is False, "_keep_true OR 의미 위반"
+    # envelope dict 채널 — compute_envelope 중복호출 last-write-wins(빈값이면 기존 유지). crash 대신 병합.
+    assert S._keep_last({}, {"a": 1}) == {"a": 1} and S._keep_last({"a": 1}, {}) == {"a": 1}, "_keep_last 빈값 처리 위반"
+    assert S._keep_last({"a": 1}, {"b": 2}) == {"b": 2}, "_keep_last last-write-wins 위반"
 
 # 불변식 D4 — HITL 답변(document_facts 키)은 user_fact:<key>로 인용 가능해야 한다(record_* 근거계약).
 # 안 되면 work_type 등 user_fact 근거 커밋이 거부루프→record_loop(빈 진단)으로 떨어진다(검수: 라이브 crash 실발생).

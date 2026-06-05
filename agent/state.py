@@ -19,6 +19,10 @@ def _keep_true(a, b):   # 병렬 도구가 같은 스텝에 _delegated를 동시
     return bool(a) or bool(b)
 
 
+def _keep_last(a, b):   # dict 채널(envelope)에 병렬 도구가 같은 스텝에 동시 write해도 충돌 대신 last-write-wins(빈값이면 기존 유지). compute_envelope 중복호출 crash 차단.
+    return b if b else a
+
+
 # ── 근거계약 공통 토대 (MASTER_PLAN item 0) ─────────────────────────────
 # 0a. 공통 UnresolvedBy enum — 미해결 분류 단일 정의(전 모델 동일). unknown→none 조용한 강등 금지.
 _UNRESOLVED = Literal["none", "agent", "user", "authority", "data_unavailable", "tool_budget_exhausted"]
@@ -346,7 +350,7 @@ class GaneomteoState(TypedDict):
     author: NotRequired[dict]
     term_notes: NotRequired[dict]            # 진단맥락 용어설명(에이전트가 state 사실로 생성) — 프론트 popover(when_note 패턴)
     scale_limits: NotRequired[dict]          # compute_scale 전용(에너지/구조안전 — 실 연면적 기준)
-    envelope: NotRequired[dict]              # compute_envelope 전용(건폐율·용적률 최대치) — scale_limits와 분리(병렬 동시쓰기 충돌 방지)
+    envelope: Annotated[dict, _keep_last]    # compute_envelope 전용(건폐율·용적률 최대치) — scale_limits와 분리 + reducer로 병렬 중복호출 동시쓰기 충돌(InvalidUpdateError) 차단(_delegated·doc_index_hit과 동형)
     parking_req: NotRequired[dict]           # parking_quota 산출(부설주차 N대) — scale_limits와 분리(덮어쓰기 충돌 방지)
     levies: Annotated[list, operator.add]    # 부담금(농지보전·대체산림·개발) — levy_estimate가 누적
     citations: Annotated[list, operator.add]
