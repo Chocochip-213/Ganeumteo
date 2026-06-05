@@ -148,6 +148,8 @@ def completeness_guard(state):
                          + [v.get("dimension") for v in _vl if isinstance(v, dict) and v.get("unresolved_by") == "agent"])
             if _agent_un:
                 miss.append("미해결재조사(agent):" + ",".join(str(x) for x in _agent_un[:4]))
+            if "record_verdict" not in called:   # 종합판정 강제(LLM only) — record_verdict 미호출 채 '완료'면 compose가 verdict_labels 0축(빈 카드) 생성. stub은 _derive 사용(면제). 라이브 갭 실측(i23 다가구 신축·i19 대수선 0축). 코드는 호출 presence만, verdict 내용은 LLM.
+                miss.append("종합판정(record_verdict 호출 — 모든 축 종합해 최종 verdict 커밋; 미호출시 빈 카드)")
     if miss and (state.get("_steps", 0) - state.get("_turn_base_steps", 0)) < _GUARD_BOUNCE_CAP and not stalled:
         # 제어신호는 사용자 발화로 위장하지 않는다 — <system-reminder>로 명시(Claude Code 패턴).
         return {"_incomplete": True, "messages": [HumanMessage(f"<system-reminder>완결성 자동점검(사용자 발화 아님): 아직 미확인 {miss}. 해당 도구로만 마저 조회·판정하고(확인필요는 unresolved_by로 분류, 더 조사 가능하면 직접 조사), 끝나면 도구 없이 '완료'라 답하라.</system-reminder>")]}
