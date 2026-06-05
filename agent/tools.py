@@ -188,6 +188,37 @@ def get_land_price(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -
 
 
 @tool
+def overlap_extent(state: Annotated[dict, InjectedState] = None, tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
+    """필지 폴리곤 ∩ 용도지역/도시계획시설저촉 면적비(%·㎡) — '저촉/걸침 범위 미확인→확인필요' punt를 수치로 해소.
+    **언제**: get_land_use가 도시계획시설(도로/공원·녹지)저촉을 주거나 용도지역이 둘 이상(복수걸침 의심)일 때 호출(좌표·대지면적은 state 사용).
+    **무엇**: ①용도지역 걸침 비율(§84 과반 판정) ②저촉 면적%·제척 후 잔여㎡. VWorld 연속지적도·도시계획 폴리곤 라이브(grid 샘플 교집합). 데이터=정량화, 법적효과 판정은 너."""
+    state = state or {}
+    xy = state.get("_xy")
+    if not xy or len(xy) != 2:
+        return Command(update={"_toolcalls": ["overlap_extent"], "messages": [_tm("좌표 미확보 — get_parcel 먼저 호출", tool_call_id)]})
+    ext = W.overlap_extent(xy[0], xy[1], state.get("land_area"))
+    zl = (ext or {}).get("zones") or []
+    cf = (ext or {}).get("conflicts") or []
+    if not zl and not cf:
+        return Command(update={"_toolcalls": ["overlap_extent"],
+                               "messages": [_tm("필지 폴리곤 ∩ 용도지역/저촉 회수 실패·미겹침 — 저촉·걸침 범위는 토지이음 도면으로 확인필요(폴리곤 데이터 부재, data_unavailable)", tool_call_id)]})
+    _zmsg = ", ".join(f"{z['zone']} {z['pct']}%" + (f"(≈{z['m2']}㎡)" if z.get("m2") else "") for z in zl)
+    _cmsg = ", ".join(f"{c['facility']} {c['pct']}%" + (f"(저촉≈{c['m2']}㎡, 제척후 잔여≈{c['remain_m2']}㎡)" if c.get("m2") is not None else "") for c in cf)
+    _zsum = sum(z.get("pct", 0) for z in zl)
+    _eid = _ev_id("api", "overlap", state.get("pnu") or f"{xy[0]:.5f},{xy[1]:.5f}")
+    msg = (f"필지 면적비(VWorld 폴리곤 {ext.get('sample_pts')}점 샘플) — 용도지역: {_zmsg or '미회수'}"
+           + (f" ← §84 복수걸침: **과반(최대%) 용도지역 기준 적용**(국토계획법§84 과반·소규모 룰; 무조건 확인필요로 빼지 마라)" if len(zl) > 1 else " (단일 용도지역)")
+           + (f" / 도시계획시설저촉: {_cmsg}" if cf else " / 도시계획시설저촉 폴리곤 미겹침")
+           + ". 해석: **저촉≈100%=전체저촉**(국토계획법§64 해당시설 아닌 건축 제한 강신호 — 단 VWorld 도면 정밀도 한계라 토지이음 최종확인 병기) · **저촉<100%=제척 후 잔여㎡가 건축가능**(그 잔여로 규모 판정, 불가 단정 말 것) · 걸침은 과반 기준."
+           + (" (용도지역 합<100%면 일부 미샘플 — 소수 걸침 가능, 과반 판정엔 무영향)" if (zl and _zsum < 95) else "")
+           + f" (근거ID:{_eid})")
+    cite = Citation(source="vworld", title="필지·용도지역·도시계획시설 폴리곤 면적비(국토부 연속지적도·도시계획)",
+                    quote=((_zmsg + " / " + _cmsg).strip(" /"))[:180], source_id=_eid).model_dump()
+    return Command(update={"citations": [cite], "evidence_records": {_eid: _ev_record(_eid, "api", f"용도지역걸침 {_zmsg}; 도시계획시설저촉 {_cmsg}")},
+                           "_toolcalls": ["overlap_extent"], "messages": [_tm(msg, tool_call_id)]})
+
+
+@tool
 def act_landuse(zone_ucode: str, use_type: str, area_cd: str,
                 state: Annotated[dict, InjectedState] = None,
                 tool_call_id: Annotated[str, InjectedToolCallId] = None) -> Command:
@@ -1164,7 +1195,7 @@ def get_building_floors(pnu: str, tool_call_id: Annotated[str, InjectedToolCallI
                            "messages": [_tm(msg, tool_call_id)]})
 
 
-TOOLS = [geocode, get_parcel, get_building_register, get_building_floors, get_land_use, get_land_price, act_landuse,
+TOOLS = [geocode, get_parcel, get_building_register, get_building_floors, get_land_use, get_land_price, overlap_extent, act_landuse,
          ordin_byeolpyo_fetch, ordin_article_fetch, law_byeolpyo_fetch, law_article_fetch, docs_for_stage, assess_conditional_docs, explain_terms, compute_scale,
          compute_envelope, normalize_area, parking_quota, levy_estimate,
          author_rule_tool, reg_effect_resolve_tool, procedure_framework_tool, record_uijae, record_reg_resolution, record_ordinance_ruling, record_verdict,

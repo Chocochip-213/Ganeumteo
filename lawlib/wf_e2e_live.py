@@ -76,6 +76,68 @@ def risk_overlaps(x, y):
         except Exception:
             continue
     return out
+
+# 폴리곤 면적비 레이어 — §84 복수걸침 과반·도시계획시설 저촉 제척범위 정량화(현재 '범위 미확인→확인필요' punt 해소).
+# POINT geomFilter만 동작(WKT POLYGON=ERROR) → 필지 내부 grid 샘플 다회질의→unique feature union→intersection.
+# 면적비=EPSG:4326 무차원(작은 필지서 정확), 절대㎡=ratio×lndpclAr(대장). per-code 분기 0(레이어 루프만)=무하드코딩.
+_OVERLAP_CONFLICT = [("LT_C_UPISUQ151", "도시계획시설(도로)저촉"), ("LT_C_UPISUQ153", "도시계획시설(공원·녹지)저촉")]
+def _poly_feats(code, gf):
+    r = get("https://api.vworld.kr/req/data", {"service": "data", "request": "GetFeature", "version": "2.0",
+            "data": code, "format": "json", "crs": "EPSG:4326", "geometry": "true", "size": 50,
+            "geomFilter": gf, "key": VW, "domain": DOM})
+    try: return json.loads(r).get("response", {}).get("result", {}).get("featureCollection", {}).get("features") or []
+    except Exception: return []
+def overlap_extent(x, y, lndpcl_ar=None):
+    """필지 폴리곤 ∩ 용도지역/도시계획시설저촉 면적비 — §84 걸침 과반·저촉 제척범위를 % + ㎡로 정량화.
+    반환 {zones:[{zone,pct,m2}], conflicts:[{facility,pct,m2,remain_m2}], sample_pts}. 실패/미회수=빈 dict(graceful)."""
+    try:
+        from shapely.geometry import shape, Point
+        from shapely.ops import unary_union
+    except Exception:
+        return {}
+    pf = _poly_feats("LP_PA_CBND_BUBUN", f"POINT({x} {y})")
+    if not pf: return {}
+    try: parcel = shape(pf[0]["geometry"])
+    except Exception: return {}
+    if parcel.is_empty or parcel.area <= 0: return {}
+    parea = parcel.area
+    try: lndf = float(lndpcl_ar) if lndpcl_ar not in (None, "", "0") else None
+    except (TypeError, ValueError): lndf = None
+    _m2 = lambda r: (round(r * lndf) if lndf else None)
+    minx, miny, maxx, maxy = parcel.bounds   # 내부 grid 샘플점(걸침 다중 zone 포착)
+    pts = [parcel.representative_point()]
+    for i in range(3):
+        for j in range(3):
+            p = Point(minx + (maxx - minx) * (i + 0.5) / 3, miny + (maxy - miny) * (j + 0.5) / 3)
+            if parcel.contains(p): pts.append(p)
+    zones = {}
+    for p in pts:
+        for f in _poly_feats("LT_C_UQ111", f"POINT({p.x} {p.y})"):
+            un = (f.get("properties") or {}).get("uname") or ""
+            if not un: continue   # empty-uname(base layer noise) 필터
+            try:
+                g = shape(f["geometry"]); zones[un] = unary_union([zones[un], g]) if un in zones else g
+            except Exception: pass
+    zlist = []
+    for un, pg in zones.items():
+        try: r = parcel.intersection(pg).area / parea
+        except Exception: continue
+        if r > 0.01: zlist.append({"zone": un, "pct": round(100 * r), "m2": _m2(r)})
+    zlist.sort(key=lambda d: -d["pct"])
+    conflicts = []
+    for code, nm in _OVERLAP_CONFLICT:
+        polys = []
+        for p in pts:
+            for f in _poly_feats(code, f"POINT({p.x} {p.y})"):
+                try: polys.append(shape(f["geometry"]))
+                except Exception: pass
+        if not polys: continue
+        try: r = parcel.intersection(unary_union(polys)).area / parea
+        except Exception: continue
+        if r > 0.01:
+            conflicts.append({"facility": nm, "pct": round(100 * r), "m2": _m2(r),
+                              "remain_m2": (round((1 - r) * lndf) if lndf else None)})
+    return {"zones": zlist, "conflicts": conflicts, "sample_pts": len(pts)}
 def act(uc,nm,ac):
     out=[]; page=1
     while True:   # 전수 순회 — 5건 고정 절단 제거(뒤페이지 '금지' 누락 시 거짓 가능 방지)
