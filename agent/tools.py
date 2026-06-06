@@ -140,11 +140,12 @@ def get_land_use(pnu: str, state: Annotated[dict, InjectedState] = None, tool_ca
         except Exception:
             pass
     _xy = (state or {}).get("_xy")
+    _risk_fail = []   # 보호구역 공간조회 실패 레이어 — fail-open(장애=미겹침 흡수) 차단용, 호출부서 abstention surface
     if _xy and len(_xy) == 2 and not (os.environ.get("FORCE_STUB") or os.environ.get("APP_MODE") == "stub"):   # 검수 R1: 공간겹침 risk 레이어 POINT 탐지 → reg_overlaps 합류(getLandUseAttr 미포착 보호구역·도시계획시설저촉 silent miss=거짓'가능' 차단; 효과·가부는 LLM 게이트). stub은 결정적 게이트라 live risk 탐지 skip.
         try:
-            regs = list(dict.fromkeys(regs + W.risk_overlaps(_xy[0], _xy[1])))
+            regs = list(dict.fromkeys(regs + W.risk_overlaps(_xy[0], _xy[1], _risk_fail)))
         except Exception:
-            pass
+            _risk_fail = ["전체"]   # risk_overlaps 자체 예외(이론상 내부서 다 잡음) — 전체 미상 처리
     road = (W.dig(lc, "roadSideCodeNm") or [None])[0]   # #10 도로접면(맹지)은 토지특성에 있음
     raw_area = (W.dig(lc, "lndpclAr") or [None])[0]      # 대지면적 — envelope·부담금 입력. 0=미상/실제0 구분불가 → None
     try:
@@ -162,6 +163,9 @@ def get_land_use(pnu: str, state: Annotated[dict, InjectedState] = None, tool_ca
         upd["land_area"] = land_area
     if zone is None:   # 용도지역은 모든 필지에 존재 → None=NED 조회 실패(정당한 빈결과 아님), 정직 기권(검수 EB-3)
         upd["abstentions"] = [{"node": "get_land_use", "사유": "용도지역 미확보(VWorld NED 빈응답/실패) — 직접 확인 필요"}]
+    if _risk_fail:   # 보호구역 공간조회 실패 — '미겹침'으로 흡수하면 거짓'가능'(상수원·교육환경 등 silent miss) → data_unavailable로 정직 surface
+        upd.setdefault("abstentions", []).append({"node": "get_land_use",
+            "사유": f"보호구역 공간조회 실패({', '.join(_risk_fail)}) — VWorld 장애로 미탐지 가능, 직접 확인 필요"})
     return Command(update=upd)
 
 

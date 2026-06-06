@@ -62,19 +62,26 @@ RISK_LAYERS = [
  ("LT_C_UO101", "교육환경보호구역"),   # R1 신규: positive(노원 중계동 학교밀집 HIT)/negative(역삼·태백·순천 NOT_FOUND) 검증 — geomFilter 정상·false-positive 0. 학교 200m 정화구역(숙박·유흥 등 금지) 입지차단 탐지. (메모리 vworld-risk-layers-unwired 정정: uo101은 VWorld 가용)
  ("LT_C_UP401", "급경사재해예방지역"),   # R1 신규: feature-centroid positive 검증 HIT/역삼 negative — 급경사지 개발제약. (산림보호 uf151·습지보호구역 wgisarwet은 보류: uf151 centroid 미탐지 미검증, wgisarwet은 기존 습지보호지역 UM901과 중복 회피)
 ]
-def risk_overlaps(x, y):
+def risk_overlaps(x, y, failed=None):
     """인허가 입지 risk 공간레이어를 POINT(x y) geomFilter로 탐지 → 겹치는 규제명 리스트. 탐지만(verdict 0).
-    빈응답/ERROR/실패=미겹침(graceful degrade). 모든 레이어를 RISK_LAYERS 루프로만 순회(per-code 분기 0=무하드코딩)."""
+    failed(선택 list) 지정 시 조회실패 레이어명 적재 → 호출부가 abstention surface(장애를 '미겹침'으로 흡수하는 거짓'가능' 차단).
+    실패=빈응답(재시도소진)·비JSON(점검/에러 HTML)·response.status ERROR. NOT_FOUND·빈 features=정상 미겹침(실패 아님).
+    모든 레이어를 RISK_LAYERS 루프로만 순회(per-code 분기 0=무하드코딩)."""
     out = []
     for code, name in RISK_LAYERS:
         r = get("https://api.vworld.kr/req/data", {"service": "data", "request": "GetFeature", "version": "2.0",
                 "data": code, "format": "json", "crs": "EPSG:4326", "size": 1, "geometry": "false",
                 "geomFilter": f"POINT({x} {y})", "key": VW, "domain": DOM})
         try:
-            feats = json.loads(r).get("response", {}).get("result", {}).get("featureCollection", {}).get("features") or []
-            if feats: out.append(name)
+            j = json.loads(r)   # 빈문자열(재시도소진)·비JSON(점검/에러 HTML) → JSONDecodeError
         except Exception:
+            if failed is not None: failed.append(name)
             continue
+        if str(j.get("response", {}).get("status", "")).upper() == "ERROR":   # VWorld ERROR(레이트리밋·키·일시장애)를 미겹침과 구분
+            if failed is not None: failed.append(name)
+            continue
+        feats = j.get("response", {}).get("result", {}).get("featureCollection", {}).get("features") or []
+        if feats: out.append(name)
     return out
 
 # 폴리곤 면적비 레이어 — §84 복수걸침 과반·도시계획시설 저촉 제척범위 정량화(현재 '범위 미확인→확인필요' punt 해소).
