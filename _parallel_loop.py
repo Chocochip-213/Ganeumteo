@@ -108,6 +108,8 @@ def one(it, gen, persona, judge):
             except Exception: pass
     except Exception as e:
         rec.update(flag="EXC", err=f"{type(e).__name__}: {str(e)[:160]}")
+        if any(k in str(e) for k in ("usage limit", "Too Many Requests", "rate limit", "429")):
+            time.sleep(600)   # 프록시 쿼터 소진 — EXC 스핀(프록시 hammering) 대신 백오프, 쿼터 리셋 자동 대기
     with loglock:
         open(LOG, "a", encoding="utf-8").write(json.dumps(rec, ensure_ascii=False) + "\n")
     j = rec.get("judge") or {}
