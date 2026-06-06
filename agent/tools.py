@@ -172,7 +172,7 @@ def get_land_use(pnu: str, state: Annotated[dict, InjectedState] = None, tool_ca
 @tool
 def get_land_price(pnu: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """PNU→공시지가(원/㎡). VWorld ned getIndvdLandPriceAttr. 시계열 전체를 받아 기준연도 내림차순 최신값 채택(연도 하드코딩 없음)."""
-    rows = W.ned("getIndvdLandPriceAttr", pnu)   # stdrYear 미지정 → 전 연도 시계열 반환
+    rows = W.ned("getIndvdLandPriceAttr", pnu, {"numOfRows": 100})   # 전 연도 시계열 — VWorld는 오름차순(오래된순) 반환이라 기본 15행이면 최근연도 누락→max가 옛값 채택(공시지가 과소). 100행=전 시계열 회수
     pairs = []                                    # 레코드별 (기준연도, 공시지가) 묶음 — 최신연도 채택용
     for rec in re.findall(r"\{[^{}]*\}", json.dumps(rows, ensure_ascii=False)):
         ym = re.search(r'"stdrYear"\s*:\s*"(\d{4})"', rec)
@@ -656,8 +656,8 @@ def compute_envelope(land_area_m2: float, bcr_pct: float, far_pct: float,
     **bcr_pct(건폐율%)·far_pct(용적률%)는 인자 — LLM이 law_article_fetch로 국토계획법 시행령 §84/§85 또는 도시계획조례서 읽은 실제치를 전달**(도구에 용도지역→율 하드코딩 없음).
     **basis_note(선택)**: 이 가늠의 근거·한계 꼬리표를 LLM이 직접 작성해 전달(코드가 서술 생성 안 함). 예: 용적률을 법정상한 범위로만 읽었으면 '실제치 확인필요', 용도변경이면 '신축 가정 상한·현재는 직접 적용 아님'. 비우면 표시 안 함.
     별도 envelope 키에 저장(scale_limits와 분리 — 병렬 동시쓰기 충돌 방지). reference_only=True면 참고용(신축 가정 상한 — 용도변경·대수선 등 현재 직접 적용 아님), area_scope로 적용 면적범위 표시."""
-    max_bldg = round(land_area_m2 * bcr_pct / 100.0, 1)
-    max_floor = round(land_area_m2 * far_pct / 100.0, 1)
+    max_bldg = math.floor(land_area_m2 * bcr_pct / 100.0 * 10) / 10   # 법정 '최대한도(이하)'라 버림 — round는 ≤0.05㎡ 상향(캡 초과 방향오류)
+    max_floor = math.floor(land_area_m2 * far_pct / 100.0 * 10) / 10
     approx = round(max_floor / max_bldg, 1) if max_bldg else None
     env = {"max_building_area": max_bldg, "max_floor_area": max_floor, "approx_floors": approx,
            "envelope_note": basis_note or None,
@@ -673,8 +673,8 @@ def normalize_area(value: float, unit: str, tool_call_id: Annotated[str, Injecte
     unit이 '평'이면 ×3.3058(법정 계량환산 400/121㎡), '㎡'/'m2'면 그대로. 반환: ㎡값 + 'N㎡(약 M평)' 표시문.
     사용자가 면적을 평으로 답하거나(예 '30평') 표시용 평수가 필요할 때 이걸 써라(직접 곱하지 말 것). 반환된 ㎡값을 compute_scale/compute_envelope/parking_quota 등에 그대로 넘겨라."""
     u = (unit or "").strip().lower()
-    m2 = round(value * 3.3058, 2) if u in ("평", "py", "pyeong") else round(float(value), 2)
-    pyeong = round(m2 / 3.3058, 1)
+    m2 = round(value * (400 / 121), 2) if u in ("평", "py", "pyeong") else round(float(value), 2)   # 법정 1평=400/121㎡(계량법), 절단치 3.3058 아님
+    pyeong = round(m2 / (400 / 121), 1)
     return Command(update={"_toolcalls": ["normalize_area"],
                            "messages": [_tm(f"면적 환산: {value}{unit} → {m2}㎡(약 {pyeong}평)", tool_call_id)]})
 
@@ -724,9 +724,9 @@ def parking_quota(use_type: str, floor_area: float, base_area_m2: float,
         _basev = f"{base_area_m2}㎡/대, 변경전 {prior_base_area_m2}㎡/대(비고5/7)"
     else:   # 신축 균등
         raw = floor_area / base_area_m2
-        spaces = max(_ceil05(raw), 0)
-        _detail = f"시설면적 {floor_area}㎡ ÷ 기준 {base_area_m2}㎡/대 = {raw:.2f}→비고6"
-        _note = "부설주차 신축 균등 산식(ceil_05). 조례 강화배율 미반영(확인필요)"
+        spaces = 0 if raw < 1 else max(_ceil05(raw), 0)   # 비고6 단서: 시설물 전체 총주차 1대 미만이면 0(법제처 expcSeq 314586 — 신축에도 적용). 용도변경 비고7과 대칭
+        _detail = f"시설면적 {floor_area}㎡ ÷ 기준 {base_area_m2}㎡/대 = {raw:.2f}→비고6({'1대 미만→0' if raw < 1 else '0.5↑ 반올림'})"
+        _note = "부설주차 신축 균등 산식(별표1 비고6: 0.5↑반올림·단서 1대미만→0). 조례 강화배율 미반영(확인필요)"
         _basev = f"{base_area_m2}㎡/대"
     cite = Citation(source="law", law_name="주차장법 시행령", article="별표1",
                     quote=f"{use_type} 산정기준 {_basev}(LLM이 별표1서 읽어 전달)").model_dump()
@@ -761,7 +761,7 @@ def levy_estimate(levy_type: str, land_price: Optional[float] = None, area_m2: O
             amt = int(land_price * (rate_pct / 100.0) * area_m2)
             cap = int(50000 * area_m2)   # 시행규칙§47의2 ㎡당 5만원 상한(static provenance)
             capped = amt > cap
-            amt = min(amt, cap)
+            amt = min(amt, cap) // 10 * 10   # 국고금관리법§47① 10원 미만 끝수 절사(농지보전부담금=농지관리기금 국고수입; 농지법령에 별도 끝수규정 없음→일반법)
             _lev_static = _static_ev("nongji_cap_50000")
             li = LevyItem(levy_type="농지보전부담금", formula=formula, amount=amt, status="산출",
                           note=f"공시지가 {int(land_price)}×{rate_pct}%×{area_m2}㎡" + ("(5만원/㎡ 상한 적용)" if capped else ""),

@@ -328,7 +328,7 @@ def run(addr,atype,area=264,용도="카페(일반음식점)"):
     lu=ned("getLandUseAttr",pnu); time.sleep(.5)
     uq=re.findall(r'"prposAreaDstrcCode"\s*:\s*"(UQ[A-Z][0-9]+)"',json.dumps(lu,ensure_ascii=False))
     regs=list(dict.fromkeys(dig(lu,"prposAreaDstrcCodeNm")))
-    _pp=[(int(_y.group(1)),int(_v.group(1))) for _r in re.findall(r"\{[^{}]*\}",json.dumps(ned("getIndvdLandPriceAttr",pnu),ensure_ascii=False)) for _y in [re.search(r'"stdrYear"\s*:\s*"(\d{4})"',_r)] for _v in [re.search(r'"pblntfPclnd"\s*:\s*"(\d+)"',_r)] if _y and _v and int(_v.group(1))>0]
+    _pp=[(int(_y.group(1)),int(_v.group(1))) for _r in re.findall(r"\{[^{}]*\}",json.dumps(ned("getIndvdLandPriceAttr",pnu,{"numOfRows":100}),ensure_ascii=False)) for _y in [re.search(r'"stdrYear"\s*:\s*"(\d{4})"',_r)] for _v in [re.search(r'"pblntfPclnd"\s*:\s*"(\d+)"',_r)] if _y and _v and int(_v.group(1))>0]
     price=str(max(_pp)[1]) if _pp else "?"
     P(f"[입지·라이브] {addr_full}")
     P(f"  PNU={pnu} 지목={jimok} 용도지역={zone} 도로접면={road} 공시지가={price}원/㎡")
