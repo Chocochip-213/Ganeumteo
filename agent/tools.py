@@ -128,14 +128,23 @@ def get_land_use(pnu: str, state: Annotated[dict, InjectedState] = None, tool_ca
     lc = W.ned("getLandCharacteristics", pnu)
     zone = (W.dig(lc, "prposArea1Nm") or [None])[0]
     lu = W.ned("getLandUseAttr", pnu)
-    uq = re.findall(r'"prposAreaDstrcCode"\s*:\s*"(UQ[A-Z][0-9]+)"', json.dumps(lu, ensure_ascii=False))
+    uq = []   # 접함(cnflcAtNm='접함'=경계만 닿음, 대지가 그 지역 밖)은 행위제한 미적용 → act_landuse 질의서 제외(엉뚱 용도지역 금지신호 오염 차단)
+    for _um in re.findall(r'\{[^{}]*\}', json.dumps(lu, ensure_ascii=False)):
+        _uc = re.search(r'"prposAreaDstrcCode"\s*:\s*"(UQ[A-Z][0-9]+)"', _um)
+        if not _uc:
+            continue
+        _ucf = re.search(r'"cnflcAtNm"\s*:\s*"([^"]*)"', _um)
+        if _ucf and "접함" in _ucf.group(1):
+            continue
+        uq.append(_uc.group(1))
+    uq = list(dict.fromkeys(uq))
     regs = list(dict.fromkeys(W.dig(lu, "prposAreaDstrcCodeNm")))
     cnfl = list(dict.fromkeys(W.dig(lu, "cnflcAtNm")))   # 검수 MED-1: 포함/저촉 신호 surface — '저촉'(일부만 걸침)이면 불필요 조례확인 전가↓(LLM 판단 보조)
     _zone_cnfl = {}   # 행위제한 용도지역별 포함/저촉 — §84 복수걸침 판단용(한 쪽 '포함'=주된→과반룰로 그 zone 적용; 둘 다 '저촉'=각 부분별 배치의존)
     for _m in re.finditer(r'\{[^{}]*?"prposAreaDstrcCodeNm"[^{}]*?\}', json.dumps(lu, ensure_ascii=False)):
         try:
             _d = json.loads(_m.group(0)); _n = _d.get("prposAreaDstrcCodeNm")
-            if _n and re.search(r"(전용|일반|준)?(주거|상업|공업|녹지)지역|(보전|생산|계획)관리지역|농림지역|자연환경보전지역", _n):
+            if _n and "접함" not in _S(_d.get("cnflcAtNm")) and re.search(r"(전용|일반|준)?(주거|상업|공업|녹지)지역|(보전|생산|계획)관리지역|농림지역|자연환경보전지역", _n):   # 접함 제외 — 경계만 닿은 지역은 §84 걸침 아님(복수걸침 오탐 차단)
                 _zone_cnfl.setdefault(_n, _d.get("cnflcAtNm"))
         except Exception:
             pass
@@ -156,7 +165,7 @@ def get_land_use(pnu: str, state: Annotated[dict, InjectedState] = None, tool_ca
     upd = {"zone": zone, "zone_ucodes": uq, "reg_overlaps": regs,
            "evidence_records": {_leid: _ev_record(_leid, "api", f"용도지역 {zone}, 대지면적 {land_area}㎡, 도로접면 {road}, 규제중첩 {regs}")},
            "_toolcalls": ["get_land_use"],
-           "messages": [_tm(f"용도지역={zone} 대지면적={land_area}㎡ 도로접면={road} UQ(전부 콤마로 이어 act_landuse에 그대로)={','.join(uq)} 규제={regs} 중첩신호(포함/저촉)={cnfl} 용도지역걸침(zone:포함/저촉)={_zone_cnfl}" + (" ← 복수 용도지역: 한 쪽이 '포함'이면 그게 주된지역(§84 과반·소규모 룰로 그 지역 기준 적용 가능), 둘 다 '저촉'이면 각 부분이 각자 기준이라 건물 배치 위치에 따라 갈림(확인필요)" if len([z for z,c in _zone_cnfl.items()])>1 else "") + f" (근거ID:{_leid})", tool_call_id)]}
+           "messages": [_tm(f"용도지역={zone} 대지면적={land_area}㎡ 도로접면={road} UQ(전부 콤마로 이어 act_landuse에 그대로)={','.join(uq)} 규제={regs} 중첩신호(포함/저촉)={cnfl} 용도지역걸침(zone:포함/저촉)={_zone_cnfl}" + (" ← 복수 용도지역 걸침: overlap_extent로 각 면적%·가장작은걸침부㎡ 정량화 후 §84①(임계 330㎡ 이하만 적용·건폐율/용적률 면적가중평균·녹지는 §84③ 각자적용) 판정 — 무조건 과반 갈음·무조건 확인필요 둘 다 금지" if len([z for z,c in _zone_cnfl.items()])>1 else "") + f" (근거ID:{_leid})", tool_call_id)]}
     if road is not None:   # 도로접면 None이면 get_parcel이 잡은 값(맹지 등)을 덮어쓰지 않음 — 맹지 fail-closed 보존(last-write-wins 버그 차단)
         upd["road_side"] = road
     if land_area is not None:
@@ -209,11 +218,12 @@ def overlap_extent(state: Annotated[dict, InjectedState] = None, tool_call_id: A
     _zmsg = ", ".join(f"{z['zone']} {z['pct']}%" + (f"(≈{z['m2']}㎡)" if z.get("m2") else "") for z in zl)
     _cmsg = ", ".join(f"{c['facility']} {c['pct']}%" + (f"(저촉≈{c['m2']}㎡, 제척후 잔여≈{c['remain_m2']}㎡)" if c.get("m2") is not None else "") for c in cf)
     _zsum = sum(z.get("pct", 0) for z in zl)
+    _min_m2 = min((z["m2"] for z in zl if z.get("m2")), default=None)   # §84① 임계판정용 가장 작은 걸침부 절대㎡
     _eid = _ev_id("api", "overlap", state.get("pnu") or f"{xy[0]:.5f},{xy[1]:.5f}")
     msg = (f"필지 면적비(VWorld 폴리곤 {ext.get('sample_pts')}점 샘플) — 용도지역: {_zmsg or '미회수'}"
-           + (f" ← §84 복수걸침: **과반(최대%) 용도지역 기준 적용**(국토계획법§84 과반·소규모 룰; 무조건 확인필요로 빼지 마라)" if len(zl) > 1 else " (단일 용도지역)")
+           + (f" ← §84 복수걸침(가장 작은 걸침부 ≈{_min_m2}㎡): 국토계획법§84①·시행령§94 임계 330㎡(도로변 띠 상업지역 660㎡) **이하일 때만** §84① 적용 — 건폐율·용적률은 **면적가중평균**(Σ면적×율/전체대지), 그 밖의 건축제한·금지목록은 가장 넓은 면적 용도지역 기준. **임계 초과면 §84① 미적용=각 구역 각자 적용**. **녹지지역 걸침은 §84③(각 구역 별도)**. 임계·도로변띠·녹지·발동은 네가 판정(무조건 과반 갈음 금지)" if len(zl) > 1 else " (단일 용도지역)")
            + (f" / 도시계획시설저촉: {_cmsg}" if cf else " / 도시계획시설저촉 폴리곤 미겹침")
-           + ". 해석: **저촉≈100%=전체저촉**(국토계획법§64 해당시설 아닌 건축 제한 강신호 — 단 VWorld 도면 정밀도 한계라 토지이음 최종확인 병기) · **저촉<100%=제척 후 잔여㎡가 건축가능**(그 잔여로 규모 판정, 불가 단정 말 것) · 걸침은 과반 기준."
+           + ". 해석: **저촉≈100%=전체저촉**(국토계획법§64 해당시설 아닌 건축 제한 강신호 — 단 VWorld 도면 정밀도 한계라 토지이음 최종확인 병기) · **저촉<100%=제척 후 잔여㎡가 건축가능**(그 잔여로 규모 판정, 불가 단정 말 것) · 걸침은 위 §84① 임계·가중평균 규칙."
            + (" (용도지역 합<100%면 일부 미샘플 — 소수 걸침 가능, 과반 판정엔 무영향)" if (zl and _zsum < 95) else "")
            + f" (근거ID:{_eid})")
     cite = Citation(source="vworld", title="필지·용도지역·도시계획시설 폴리곤 면적비(국토부 연속지적도·도시계획)",
