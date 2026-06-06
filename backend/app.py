@@ -38,6 +38,8 @@ def diagnose_stream(address: str, use_type: str = "", floor_area: float = None, 
 @app.get("/diagnose/resume")
 def diagnose_resume(thread_id: str, request: Request, reject: bool = False):
     _, cfg = make_config(thread_id)   # thread_id 형식 검증(make_config) — 불일치면 새 id(기존 thread 미접근)
+    if not GRAPH.get_state(cfg).next:   # 대기 중 인터럽트 없음(완료·만료·형식불일치 thread) — resume를 새 진단으로 silent 재실행하던 것 차단. 409→프론트 onerror→fetchResult(직전 결과 표시)
+        return JSONResponse(status_code=409, content={"error": "no pending interrupt for thread"})
     if reject:
         resume = {"type": "reject"}
     else:
@@ -72,6 +74,8 @@ def diagnose_result(thread_id: str):
     """완료 후 ReturnEnvelope(_return: 4키) + 전체 citation 객체(카드 렌더용) + 좌표(카카오맵용)."""
     _, cfg = make_config(thread_id)
     vals = GRAPH.get_state(cfg).values
+    if not vals or vals.get("_return") is None:   # 미존재·만료(DB wipe)·미완료 thread — null-200(프론트 _ret.status TypeError 행) 대신 정직한 404(chat.js:658 !r.ok→'결과 불러오지 못했어요')
+        return JSONResponse(status_code=404, content={"error": "no result for thread (expired or not finished)"})
     body = {"_return": vals.get("_return"), "citations": vals.get("citations", []),
             "xy": vals.get("_xy"), "pnu": vals.get("pnu"), "address": vals.get("address"),
             "jimok": vals.get("jimok"), "zone": vals.get("zone")}
