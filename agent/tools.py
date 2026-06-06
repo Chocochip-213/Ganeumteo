@@ -303,6 +303,25 @@ def _bundle_byeolpyo_units(units):
     return [b for b in units if isinstance(b, dict) and _S(b.get("별표첨부파일명"))
             and "별지" not in _S(b.get("별표제목")) and "서식" not in _S(b.get("별표제목"))]
 
+def _zone_article_body(svc, zone):
+    """zone별 별표가 없는 지자체(별표 삭제·용도지역 건축제한을 조문 본문에 둠 — 예 수원 제46조 '자연녹지지역 안에서의 건축제한') 대응:
+    같은 조례 조문서 'zone명 + 건축제한/건축할 수 있는·없는' 조를 찾아 (조내용, 조제목) 반환. 별표·통합첨부 미스 시 폴백.
+    구조탐색(조제목 키워드 부분일치)만 — per-city/per-zone 분기 0(무하드코딩), 본문 의미는 LLM이 읽고 판정."""
+    zk = _nows(zone)
+    jo = svc.get("조문", {}) if isinstance(svc, dict) else {}
+    arr = jo.get("조", []) if isinstance(jo, dict) else []
+    if isinstance(arr, dict):
+        arr = [arr]
+    for a in arr:
+        if not (isinstance(a, dict) and a.get("조문여부") == "Y"):
+            continue
+        tn = _nows(a.get("조제목"))
+        if zk and zk in tn and ("건축제한" in tn or "건축할수있는" in tn or "건축할수없는" in tn):
+            c = _S(a.get("조내용"))
+            if c:
+                return c, _S(a.get("조제목"))
+    return None, None
+
 def _search_zone_byeolpyo(query, locality, zone):
     """query로 조례 검색 → locality 든 후보(광역 단위 조례 우선) 중 zone 별표 본문을 찾으면 (본문, meta, 광역명)."""
     cands = [it for it in (L.ordin_search(query).get("items") or []) if (not locality or locality in _S(it.get("자치법규명")))]
@@ -312,7 +331,8 @@ def _search_zone_byeolpyo(query, locality, zone):
         nm = _S(it.get("자치법규명"))
         last_nm = nm
         wide = wide or (_S(it.get("지자체기관명")).split() or [""])[0]   # 후보 기관명 첫 토큰=광역명(폴백 키)
-        units = _byeolpyo_units(L.ordin_service(it.get("자치법규일련번호") or it.get("MST")))
+        svc = L.ordin_service(it.get("자치법규일련번호") or it.get("MST"))
+        units = _byeolpyo_units(svc)
         b = _pick_zone_byeolpyo(units, zone)
         if b:
             body = _byeolpyo_body(b)
@@ -322,6 +342,9 @@ def _search_zone_byeolpyo(query, locality, zone):
             full = _byeolpyo_body(bund)
             if full and _nows(zone) in _nows(full):   # 통합본문에 zone 실재하면 그 본문 반환(LLM이 zone 부분 찾아 읽음)
                 return full, {"조례명": nm, "별표": _S(bund.get("별표제목"))[:24] + f"(통합·{zone} 검색)"}, wide
+        ab, at = _zone_article_body(svc, zone)   # 별표·통합 미스 → 같은 조례 조문서 'zone 건축제한' 조(수원 §46 등 용도제한을 별표→본문 이전한 지자체)
+        if ab:
+            return ab, {"조례명": nm, "별표": (at or "용도지역 건축제한") + "(조문)"}, wide
     return None, {"조례명": last_nm}, wide
 
 def _ordin_bodytext(sigungu, zone):
